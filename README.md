@@ -32,10 +32,10 @@ end, { desc = "Append selection to opencode" })
 
 ## 验证
 
-本仓库内置自闭环测试，不读取全局 Neovim 配置：
+本仓库内置自闭环测试，使用 `VIM_PROFILE=basic` 加载你的基础 Neovim profile：
 
 ```sh
-nvim --clean -u NONE --headless -l tests/run.lua
+VIM_PROFILE=basic nvim --headless -l tests/run.lua
 ```
 
 ## 开发态启动

@@ -4,8 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-exec nvim --clean -u NONE \
+export VIM_PROFILE="${VIM_PROFILE:-basic}"
+
+exec nvim \
   --cmd "set runtimepath^=${REPO_ROOT}" \
-  -c "runtime plugin/opencode_chat.lua" \
+  --cmd "lua package.path = '${REPO_ROOT}/lua/?.lua;${REPO_ROOT}/lua/?/init.lua;' .. package.path" \
+  -c "lua vim.g.loaded_opencode_chat = nil" \
+  -c "source ${REPO_ROOT}/plugin/opencode_chat.lua" \
   -c "lua vim.notify('opencode-chat.nvim loaded: <M--> toggles chat, :OpencodeAsk sends a prompt')" \
   "$@"

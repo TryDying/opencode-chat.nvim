@@ -33,7 +33,7 @@ These routing rules are mandatory for this repository.
 
 ## Common commands
 
-- Run the self-contained Neovim test suite without loading global user config: `nvim --clean -u NONE --headless -l tests/run.lua`.
+- Run the self-contained Neovim test suite with the basic profile: `VIM_PROFILE=basic nvim --headless -l tests/run.lua`.
 - The test suite uses `tests/fixtures/opencode` as a fake `opencode serve` HTTP API; it does not require a real opencode server.
 - Expected future focused checks for Lua code should prefer fast local validation first, such as `luacheck`/`stylua` only after those tools are added to the repo.
 - Do not invent package-manager, test, lint, or build commands until the relevant manifests/configs exist.
