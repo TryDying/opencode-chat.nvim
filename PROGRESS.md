@@ -16,3 +16,10 @@
 - 方案：改为 Neovim 原生 Chat UI，后台使用 `opencode serve`，通过 `/api/session` 创建会话并用 `/api/session/:sessionID/prompt` 发送问题；默认绑定 Normal/Visual `<M-->`。
 - 预防：后续定义 MVP 时必须验证“用户完成一次提问并看到回复”的闭环，而不只是验证进程能启动或上下文能被追加。
 - commitID：b9e4aff
+
+## 2026-06-28：不要把 prompt 返回体直接当 assistant 回复
+
+- 问题：`/api/session/:sessionID/prompt` 的返回体可能是用户消息或 prompt 回显，旧解析逻辑抓取任意 `text` 字段，导致 Chat UI 把用户输入渲染成 assistant 回复。
+- 方案：发送 prompt 后轮询 message history，只提取 `info.role == "assistant"` 且 `parts[].type == "text"` 的文本作为 assistant 回复。
+- 预防：测试 fixture 必须模拟“prompt 接口返回用户消息、history 才包含 assistant 消息”的场景，防止再次误把用户回显当回复。
+- commitID：d76d26b
