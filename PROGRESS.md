@@ -9,3 +9,10 @@
 - 方案：第一版只用 Neovim 原生 floating terminal 承载 TUI，实际上下文注入统一走 `POST /tui/append-prompt`。
 - 预防：后续扩展仍应保持 terminal 仅负责显示；与 opencode 的编辑器通信优先通过本地 HTTP/API，并用仓库内 fake bridge 测试闭环。
 - commitID：a5ac440
+
+## 2026-06-28：最小闭环必须包含原生 UI 与 headless prompt
+
+- 问题：只把 opencode TUI 包进 terminal 的 MVP 对用户价值不足，和手动开 terminal 运行 opencode 差异很小，且没有默认 `<M-->` 快捷键会导致入口不可见。
+- 方案：改为 Neovim 原生 Chat UI，后台使用 `opencode serve`，通过 `/api/session` 创建会话并用 `/api/session/:sessionID/prompt` 发送问题；默认绑定 Normal/Visual `<M-->`。
+- 预防：后续定义 MVP 时必须验证“用户完成一次提问并看到回复”的闭环，而不只是验证进程能启动或上下文能被追加。
+- commitID：b9e4aff
