@@ -1,13 +1,14 @@
 # opencode-chat.nvim
 
-轻量 Neovim 插件：用原生 floating terminal 承载 opencode TUI，并通过 opencode 本地 HTTP bridge 追加当前文件或选区上下文。
+轻量 Neovim 插件：用 Neovim 原生 floating buffer 实现最小 Chat UI，并通过 `opencode serve` 的本地 HTTP API 创建 session、发送 prompt。
 
 ## 功能
 
-- `:OpencodeToggle` 打开/隐藏 opencode TUI。
-- `:OpencodeAppendFile` 追加当前文件引用。
-- `:OpencodeAppendSelection` 追加 Visual 选区引用。
-- `:OpencodeNewSession` 停止当前 TUI 并创建新 session。
+- `:OpencodeToggle` 打开/隐藏原生 Chat UI。
+- `:OpencodeAsk [prompt]` 发送问题；不带参数时弹出输入框。
+- `:OpencodeAppendFile` 将当前文件引用加入下一次提问上下文。
+- `:OpencodeAppendSelection` 将 Visual 选区引用加入下一次提问上下文。
+- `:OpencodeNewSession` 停止当前 server 并创建新 session。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
 ## 配置示例
@@ -23,6 +24,11 @@ vim.keymap.set("v", "<M-->", function()
   require("opencode_chat").append_selection()
 end, { desc = "Append selection to opencode" })
 ```
+
+默认会绑定：
+
+- Normal `<M-->`：toggle Chat UI
+- Visual `<M-->`：追加选区上下文
 
 ## 验证
 

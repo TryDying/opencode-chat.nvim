@@ -4,7 +4,7 @@
 
 - This repository contains the `opencode-chat.nvim` Neovim plugin.
 - The Lua module name is `opencode_chat`.
-- The first milestone is an MVP based on native Neovim terminal/floating windows plus opencode's local HTTP bridge, not a full native chat UI.
+- The first milestone is a minimal native Neovim chat UI backed by `opencode serve` and local HTTP APIs.
 - Project-facing documentation under `docs/` and the lessons log `PROGRESS.md` are maintained in Chinese.
 
 ## Documentation index
@@ -34,17 +34,16 @@ These routing rules are mandatory for this repository.
 ## Common commands
 
 - Run the self-contained Neovim test suite without loading global user config: `nvim --clean -u NONE --headless -l tests/run.lua`.
-- The test suite uses `tests/fixtures/opencode` as a fake opencode HTTP bridge; it does not require a real opencode server.
+- The test suite uses `tests/fixtures/opencode` as a fake `opencode serve` HTTP API; it does not require a real opencode server.
 - Expected future focused checks for Lua code should prefer fast local validation first, such as `luacheck`/`stylua` only after those tools are added to the repo.
 - Do not invent package-manager, test, lint, or build commands until the relevant manifests/configs exist.
 
 ## Architecture highlights
 
-- Use only native Neovim terminal/floating window APIs for the MVP; do not add `vim-floaterm` support.
-- Treat the terminal as a display container only. Neovim-to-opencode communication must use local HTTP.
-- MVP integration is `opencode --port <port>` plus `POST /tui/append-prompt`; do not inject text with `chansend()`.
-- Repeated toggles in one Neovim process must reuse the same opencode TUI/session. Restarting Neovim should create a new session.
-- Visual-mode context append must not submit the prompt; it must leave text in the opencode input box for the user to continue editing.
+- Use native Neovim buffers/floating windows for the MVP UI; do not add `vim-floaterm` support.
+- MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /api/session`, and `POST /api/session/:sessionID/prompt`.
+- Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
+- Visual-mode context append must not submit the prompt; it queues the selection reference for the next `:OpencodeAsk`.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.
 - Project root markers are `.root`, `.git`, `.svn`, `.hg`, `.project`, `.ccls`.
 
@@ -52,22 +51,22 @@ These routing rules are mandatory for this repository.
 
 - `lua/opencode_chat/config.lua`: defaults and user configuration merge.
 - `lua/opencode_chat/root.lua`: project root detection from root markers.
-- `lua/opencode_chat/terminal.lua`: native floating terminal, terminal buffer, and opencode job lifecycle.
-- `lua/opencode_chat/client.lua`: HTTP wrapper for `/tui/append-prompt`.
+- `lua/opencode_chat/server.lua`: headless opencode server job and session lifecycle.
+- `lua/opencode_chat/client.lua`: HTTP wrapper for session creation and prompt submission.
+- `lua/opencode_chat/ui.lua`: native floating chat buffer rendering and queued context display.
 - `lua/opencode_chat/context.lua`: current-file and Visual-selection reference generation.
 - `lua/opencode_chat/commands.lua`: command registration such as `:OpencodeToggle`.
 - `lua/opencode_chat/init.lua`: public setup/API entrypoint.
 
 ## Explicit non-goals for the MVP
 
-- Do not implement `opencode serve` plus a native Neovim chat UI yet.
 - Do not implement diff apply, file tree, multi-session picker, prompt templates, or agent/mode management yet.
 - Do not add a floaterm backend.
 
 ## Validation focus
 
-- Manually verify that `POST /tui/append-prompt` appends text without pressing Enter/submitting.
-- Manually verify that hide/show toggle does not create a new opencode session in the same Neovim process.
+- Manually verify that `:OpencodeAsk` creates a session, sends a prompt, and renders the assistant response in the native UI.
+- Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
 - Manually verify that reversed Visual selections still produce ascending line ranges.
 
 ## Documentation maintenance rules

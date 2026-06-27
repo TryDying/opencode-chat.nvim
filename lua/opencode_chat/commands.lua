@@ -13,6 +13,10 @@ function M.setup(api)
     api.append_selection()
   end, { range = true, force = true })
 
+  vim.api.nvim_create_user_command("OpencodeAsk", function(opts)
+    api.ask(opts.args)
+  end, { nargs = "*", force = true })
+
   vim.api.nvim_create_user_command("OpencodeNewSession", function()
     api.new_session()
   end, { force = true })

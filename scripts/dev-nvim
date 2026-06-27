@@ -7,4 +7,5 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 exec nvim --clean -u NONE \
   --cmd "set runtimepath^=${REPO_ROOT}" \
   -c "runtime plugin/opencode_chat.lua" \
+  -c "lua vim.notify('opencode-chat.nvim loaded: <M--> toggles chat, :OpencodeAsk sends a prompt')" \
   "$@"

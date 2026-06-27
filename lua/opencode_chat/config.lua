@@ -4,14 +4,15 @@ M.defaults = {
   command = "opencode",
   host = "127.0.0.1",
   port = nil,
+  model = nil,
+  keymaps = true,
   root_markers = { ".root", ".git", ".svn", ".hg", ".project", ".ccls" },
   startup_timeout_ms = 5000,
-  append_newline = true,
-  terminal = {
+  ui = {
     width = 0.9,
     height = 0.85,
     border = "rounded",
-    title = " opencode ",
+    title = " opencode-chat ",
   },
 }
 
