@@ -74,7 +74,24 @@ function M.send(text, startpath, cb)
       return
     end
     client.send_prompt(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model }, function(sent, data, result, reply)
-      cb(sent, reply, sent and data or (result and (result.stderr or result.stdout) or "prompt failed"))
+      if not sent then
+        cb(false, nil, result and (result.stderr or result.stdout) or "prompt failed")
+        return
+      end
+
+      client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
+        if found then
+          cb(true, assistant_text, history)
+          return
+        end
+
+        if reply ~= "" and reply ~= text then
+          cb(true, reply, data)
+          return
+        end
+
+        cb(false, nil, history_result and (history_result.stderr or history_result.stdout) or "assistant response not found")
+      end)
     end)
   end)
 end

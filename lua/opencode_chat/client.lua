@@ -21,6 +21,10 @@ function M.prompt_url(session_id, opts)
   return url("/api/session/" .. session_id .. "/prompt", opts)
 end
 
+function M.messages_url(session_id, opts)
+  return url("/session/" .. session_id .. "/message", opts)
+end
+
 function M.run(args, cb)
   if vim.system then
     vim.system(args, { text = true }, cb)
@@ -43,6 +47,15 @@ local function decode_json(text)
     return decoded
   end
   return nil
+end
+
+local function get_json(target_url, cb)
+  M.run({ "curl", "-sS", target_url }, function(result)
+    local ok = result.code == 0
+    if cb then
+      cb(ok, decode_json(result.stdout), result)
+    end
+  end)
 end
 
 local function post_json(target_url, payload, cb)
@@ -103,6 +116,30 @@ function M.extract_text(data, fallback)
   return table.concat(unique, "\n")
 end
 
+function M.extract_assistant_text(messages)
+  if type(messages) ~= "table" then
+    return ""
+  end
+
+  for index = #messages, 1, -1 do
+    local item = messages[index]
+    local info = item and item.info
+    if info and info.role == "assistant" and type(item.parts) == "table" then
+      local parts = {}
+      for _, part in ipairs(item.parts) do
+        if type(part) == "table" and part.type == "text" and type(part.text) == "string" and part.text ~= "" then
+          table.insert(parts, part.text)
+        end
+      end
+      if #parts > 0 then
+        return table.concat(parts, "\n")
+      end
+    end
+  end
+
+  return ""
+end
+
 function M.create_session(directory, opts, cb)
   opts = opts or {}
   post_json(M.session_url(opts), { directory = directory }, function(ok, data, result)
@@ -124,6 +161,35 @@ function M.send_prompt(session_id, text, opts, cb)
     end
     cb(ok, data, result, M.extract_text(data, result and result.stdout or ""))
   end)
+end
+
+function M.get_messages(session_id, opts, cb)
+  opts = opts or {}
+  get_json(M.messages_url(session_id, opts), cb)
+end
+
+function M.wait_for_assistant(session_id, opts, cb)
+  opts = opts or {}
+  local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().startup_timeout_ms) * 1000000)
+
+  local function poll()
+    M.get_messages(session_id, opts, function(ok, data, result)
+      local text = ok and M.extract_assistant_text(data) or ""
+      if text ~= "" then
+        cb(true, text, data, result)
+        return
+      end
+
+      if vim.loop.hrtime() >= deadline then
+        cb(false, text, data, result)
+        return
+      end
+
+      vim.defer_fn(poll, 200)
+    end)
+  end
+
+  poll()
 end
 
 function M.wait_until_ready(opts, cb)

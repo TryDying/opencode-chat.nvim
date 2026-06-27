@@ -9,6 +9,7 @@ import sys
 
 
 SESSION_ID = "test-session"
+LAST_PROMPT = ""
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -18,10 +19,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"ok")
             return
+        if self.path == f"/session/{SESSION_ID}/message":
+            self._json([
+                {
+                    "info": {"id": "user-message", "role": "user"},
+                    "parts": [{"type": "text", "text": LAST_PROMPT}],
+                },
+                {
+                    "info": {"id": "assistant-message", "role": "assistant"},
+                    "parts": [{"type": "text", "text": "fake reply: " + LAST_PROMPT}],
+                },
+            ])
+            return
         self.send_response(404)
         self.end_headers()
 
     def do_POST(self):
+        global LAST_PROMPT
         length = int(self.headers.get("content-length", "0"))
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body) if body else {}
@@ -32,9 +46,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if re.match(r"^/api/session/[^/]+/prompt$", self.path):
             text = data.get("prompt", {}).get("text", "")
+            LAST_PROMPT = text
             with open(os.path.join(os.getcwd(), ".opencode-chat-prompt.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps(data, ensure_ascii=False) + "\n")
-            self._json({"message": {"role": "assistant", "text": "fake reply: " + text}})
+            self._json({"info": {"role": "user"}, "parts": [{"type": "text", "text": text}]})
             return
 
         self.send_response(404)

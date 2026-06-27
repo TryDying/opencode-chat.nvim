@@ -65,6 +65,11 @@ assert_eq(context.selection_reference(0), "@src/example.lua#L1-L3", "selection_r
 
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session URL should match headless API")
 assert_eq(client.prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "prompt URL should match headless API")
+assert_eq(client.messages_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "messages URL should match headless API")
+assert_eq(client.extract_assistant_text({
+  { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
+  { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
+}), "answer", "extract_assistant_text should ignore user echo and read assistant text parts")
 
 opencode.append_file()
 assert_eq(ui.state().context[1], "@src/example.lua", "append_file should add context to native UI draft")
@@ -84,6 +89,7 @@ assert_true(wait_for(function()
   local messages = ui.state().messages
   return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("fake reply") ~= nil
 end, 3000), "native UI should render assistant reply")
+assert_true(ui.state().messages[#ui.state().messages].text ~= payload.prompt.text, "assistant message must not render the echoed user prompt")
 
 local first_job = server.state().job_id
 opencode.toggle()
