@@ -31,3 +31,11 @@ end, { desc = "Append selection to opencode" })
 ```sh
 nvim --clean -u NONE --headless -l tests/run.lua
 ```
+
+## 开发态启动
+
+不修改全局 Neovim 配置，直接加载当前仓库插件并启动 Neovim：
+
+```sh
+./scripts/dev-nvim README.md
+```
