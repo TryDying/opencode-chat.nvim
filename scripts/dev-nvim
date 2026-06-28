@@ -4,12 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-export VIM_PROFILE="${VIM_PROFILE:-basic}"
+export VIM_PROFILE="basic"
+NVIM_INIT="${NVIM_INIT:-${HOME}/.config/nvim/init.lua}"
 
 exec nvim \
+  -u "${NVIM_INIT}" \
   --cmd "set runtimepath^=${REPO_ROOT}" \
   --cmd "lua package.path = '${REPO_ROOT}/lua/?.lua;${REPO_ROOT}/lua/?/init.lua;' .. package.path" \
+  -c "lua assert(vim.env.VIM_PROFILE == 'basic', 'VIM_PROFILE must be basic')" \
   -c "lua vim.g.loaded_opencode_chat = nil" \
   -c "source ${REPO_ROOT}/plugin/opencode_chat.lua" \
-  -c "lua vim.notify('opencode-chat.nvim loaded: <M--> toggles chat, :OpencodeAsk sends a prompt')" \
+  -c "lua vim.notify('opencode-chat.nvim loaded: <M--> toggles chat, input <C-s> submits')" \
   "$@"

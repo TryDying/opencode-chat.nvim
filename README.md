@@ -1,13 +1,16 @@
 # opencode-chat.nvim
 
-轻量 Neovim 插件：用 Neovim 原生 floating buffer 实现最小 Chat UI，并通过 `opencode serve` 的本地 HTTP API 创建 session、发送 prompt。
+轻量 Neovim 插件：用 Neovim 原生 floating buffers 实现 Chat UI，并通过 `opencode serve` 的本地 HTTP API 创建 session、发送 prompt、预览并应用 diff。
 
 ## 功能
 
 - `:OpencodeToggle` 打开/隐藏原生 Chat UI。
-- `:OpencodeAsk [prompt]` 发送问题；不带参数时弹出输入框。
-- `:OpencodeAppendFile` 将当前文件引用加入下一次提问上下文。
-- `:OpencodeAppendSelection` 将 Visual 选区引用加入下一次提问上下文。
+- `:OpencodeAsk [prompt]` 发送问题；不带参数时打开输入区。
+- Chat 输入区按 `<C-s>` 提交。
+- `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
+- `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
+- `:OpencodeEdit [instruction]` 请求返回 unified diff 并打开预览。
+- `:OpencodeApply` / `:OpencodeReject` 应用或拒绝 diff 预览。
 - `:OpencodeNewSession` 停止当前 server 并创建新 session。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
@@ -43,5 +46,7 @@ VIM_PROFILE=basic nvim --headless -l tests/run.lua
 不修改全局 Neovim 配置，直接加载当前仓库插件并启动 Neovim：
 
 ```sh
-./scripts/dev-nvim README.md
+./scripts/dev-sandbox
 ```
+
+该命令会创建并打开 `/tmp/opencode-chat.nvim-sandbox/src/example.lua`，不会使用仓库内受 Git 管理的文件做测试目标。

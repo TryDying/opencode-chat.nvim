@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+SANDBOX="${OPENCODE_CHAT_SANDBOX:-/tmp/opencode-chat.nvim-sandbox}"
+
+mkdir -p "${SANDBOX}/src"
+if [ ! -d "${SANDBOX}/.git" ]; then
+  git init -q "${SANDBOX}"
+fi
+
+cat > "${SANDBOX}/src/example.lua" <<'LUA'
+local M = {}
+
+function M.add(a, b)
+  return a + b
+end
+
+function M.mul(a, b)
+  return a * b
+end
+
+return M
+LUA
+
+cat > "${SANDBOX}/src/math.lua" <<'LUA'
+local mathx = require("src.example")
+
+print(mathx.add(2, 3))
+LUA
+
+cd "${SANDBOX}"
+exec "${REPO_ROOT}/scripts/dev-nvim" "${SANDBOX}/src/example.lua" "$@"

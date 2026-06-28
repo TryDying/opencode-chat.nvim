@@ -8,11 +8,14 @@ M.defaults = {
   keymaps = true,
   root_markers = { ".root", ".git", ".svn", ".hg", ".project", ".ccls" },
   startup_timeout_ms = 5000,
+  response_timeout_ms = 30000,
   ui = {
     width = 0.9,
     height = 0.85,
+    input_height = 5,
     border = "rounded",
     title = " opencode-chat ",
+    input_title = " prompt (<C-s> submit) ",
   },
 }
 

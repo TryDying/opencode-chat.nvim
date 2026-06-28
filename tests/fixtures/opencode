@@ -9,61 +9,86 @@ import sys
 
 
 SESSION_ID = "test-session"
-LAST_PROMPT = ""
+MESSAGES = []
+
+
+def text_part(message_id, text):
+    return {"id": message_id + "-part", "type": "text", "text": text}
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/app":
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"ok")
+            self._text("ok")
+            return
+        if self.path == "/doc":
+            self._json({"openapi": "3.1.0"})
             return
         if self.path == "/project":
             self._json([{"id": "test-project", "worktree": os.getcwd()}])
             return
-        if self.path == f"/project/test-project/session/{SESSION_ID}/message":
-            self._json([
-                {
-                    "info": {"id": "user-message", "role": "user"},
-                    "parts": [{"type": "text", "text": LAST_PROMPT}],
-                },
-                {
-                    "info": {"id": "assistant-message", "role": "assistant"},
-                    "parts": [{"type": "text", "text": "fake reply: " + LAST_PROMPT}],
-                },
-            ])
+        if self.path == f"/session/{SESSION_ID}/message":
+            self._json(MESSAGES)
             return
-        self.send_response(404)
-        self.end_headers()
-        self.wfile.write(b"not found")
+        if self.path == f"/project/test-project/session/{SESSION_ID}/message":
+            self._json(MESSAGES)
+            return
+        self._text("not found", 404)
 
     def do_POST(self):
-        global LAST_PROMPT
+        global MESSAGES
         length = int(self.headers.get("content-length", "0"))
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body) if body else {}
+
+        if self.path == "/session":
+            self._json({"id": SESSION_ID, "title": data.get("title")})
+            return
 
         if self.path == "/api/session":
             self._json({"id": SESSION_ID, "directory": data.get("directory")})
             return
 
-        if re.match(r"^/api/session/[^/]+/prompt$", self.path):
-            text = data.get("prompt", {}).get("text", "")
-            LAST_PROMPT = text
-            with open(os.path.join(os.getcwd(), ".opencode-chat-prompt.jsonl"), "a", encoding="utf-8") as f:
-                f.write(json.dumps(data, ensure_ascii=False) + "\n")
-            self._json({"info": {"role": "user"}, "parts": [{"type": "text", "text": text}]})
+        if self.path == f"/session/{SESSION_ID}/message":
+            text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
+            self._record_prompt(data)
+            user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
+            if "Return only a unified diff" in text:
+                reply_text = "--- a/src/example.lua\n+++ b/src/example.lua\n@@ -1,7 +1,7 @@\n local M = {}\n \n function M.add(a, b)\n-  return a + b\n+  return a - b\n end\n \n function M.mul(a, b)"
+            else:
+                reply_text = "fake reply: " + text
+            assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", reply_text)]}
+            MESSAGES = [user, assistant]
+            self._json(assistant)
             return
 
-        self.send_response(404)
-        self.end_headers()
-        self.wfile.write(b"not found")
+        if re.match(r"^/api/session/[^/]+/prompt$", self.path):
+            text = data.get("prompt", {}).get("text", "")
+            self._record_prompt(data)
+            user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
+            assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", "fake reply: " + text)]}
+            MESSAGES = [user, assistant]
+            self._json(user)
+            return
 
-    def _json(self, data):
+        self._text("not found", 404)
+
+    def _record_prompt(self, data):
+        with open(os.path.join(os.getcwd(), ".opencode-chat-prompt.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+    def _json(self, data, status=200):
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _text(self, text, status=200):
+        payload = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)

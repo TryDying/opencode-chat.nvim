@@ -3,6 +3,7 @@ local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
 local context = require("opencode_chat.context")
 local commands = require("opencode_chat.commands")
+local diff = require("opencode_chat.diff")
 
 local M = {}
 
@@ -12,12 +13,13 @@ local function notify_error(message)
   end)
 end
 
-local function prompt_text(text)
-  local refs, project_root = ui.consume_context()
-  if #refs == 0 then
+local function build_prompt(text)
+  local items, project_root = ui.consume_context()
+  local context_text = ui.context_prompt(items)
+  if context_text == "" then
     return text, project_root
   end
-  return table.concat(refs, "\n") .. "\n\n" .. text, project_root
+  return context_text .. "\n\n" .. text, project_root
 end
 
 local function set_default_keymaps()
@@ -47,43 +49,86 @@ function M.show()
   return ui.show()
 end
 
+function M.submit()
+  local text = ui.input_text()
+  if text == "" then
+    notify_error("opencode prompt is empty")
+    return
+  end
+  ui.clear_input()
+  M.ask(text)
+end
+
 function M.ask(text)
   if not text or text == "" then
-    vim.ui.input({ prompt = "opencode> " }, function(input)
-      if input and input ~= "" then
-        M.ask(input)
-      end
-    end)
+    ui.show()
     return
   end
 
-  local full_prompt, project_root = prompt_text(text)
-  ui.add_message("User", full_prompt)
+  local prompt, project_root = build_prompt(text)
+  ui.add_message("User", prompt)
   ui.add_message("Assistant", "Thinking...")
 
-  server.send(full_prompt, project_root, function(ok, reply, err)
+  server.send(prompt, project_root, function(ok, reply, err)
     vim.schedule(function()
-      local messages = ui.state().messages
-      if messages[#messages] and messages[#messages].text == "Thinking..." then
-        table.remove(messages, #messages)
-      end
       if ok then
-        ui.add_message("Assistant", reply ~= "" and reply or "(empty response)")
+        ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
       else
-        ui.add_message("Error", tostring(err or "opencode request failed"))
+        ui.replace_last_if("Assistant", "Thinking...", "Error", tostring(err or "opencode request failed"))
       end
     end)
   end)
 end
 
 function M.append_file()
-  local ref, project_root = context.file_reference(0)
-  ui.add_context(ref, project_root)
+  local item, project_root = context.file_item(0)
+  ui.add_context(item, project_root)
 end
 
 function M.append_selection()
-  local ref, project_root = context.selection_reference(0)
-  ui.add_context(ref, project_root)
+  local item, project_root = context.selection_item(0)
+  ui.add_context(item, project_root)
+end
+
+function M.edit(instruction)
+  instruction = instruction ~= "" and instruction or "Modify the current file. Return only a unified diff."
+  local item, project_root = context.file_item(0)
+  local prompt = table.concat({
+    "You are editing a file. Return only a unified diff patch for the file below.",
+    "Do not include Markdown fences or explanations.",
+    "File: " .. item.relative,
+    "Instruction: " .. instruction,
+    "Current content:",
+    "```" .. (item.ft or ""),
+    item.text,
+    "```",
+  }, "\n")
+
+  ui.add_message("User", "/edit " .. instruction)
+  ui.add_message("Assistant", "Generating diff...")
+  server.send(prompt, project_root, function(ok, reply, err)
+    vim.schedule(function()
+      if not ok then
+        ui.replace_last_if("Assistant", "Generating diff...", "Error", tostring(err or "opencode edit failed"))
+        return
+      end
+      local patch = reply:gsub("^```diff%s*", ""):gsub("```%s*$", "")
+      local preview_ok, preview_err = pcall(diff.preview, item.path, patch)
+      if preview_ok then
+        ui.replace_last_if("Assistant", "Generating diff...", "Assistant", "Diff preview ready. Use :OpencodeApply or :OpencodeReject.")
+      else
+        ui.replace_last_if("Assistant", "Generating diff...", "Error", tostring(preview_err))
+      end
+    end)
+  end)
+end
+
+function M.apply()
+  diff.apply()
+end
+
+function M.reject()
+  diff.reject()
 end
 
 function M.new_session()
@@ -100,6 +145,6 @@ function M.stop()
   ui.close()
 end
 
-M._prompt_text = prompt_text
+M._build_prompt = build_prompt
 
 return M

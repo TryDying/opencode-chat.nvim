@@ -3,8 +3,10 @@ local config = require("opencode_chat.config")
 local M = {}
 
 local state = {
-  win_id = nil,
-  buf_id = nil,
+  message_win = nil,
+  input_win = nil,
+  message_buf = nil,
+  input_buf = nil,
   messages = {},
   context = {},
   context_root = nil,
@@ -18,25 +20,65 @@ local function valid_buf(buf_id)
   return buf_id and vim.api.nvim_buf_is_valid(buf_id)
 end
 
-local function open_float(buf_id)
+local function layout()
   local cfg = config.get().ui
-  local columns = vim.o.columns
-  local lines = vim.o.lines
-  local width = math.floor(columns * cfg.width)
-  local height = math.floor((lines - vim.o.cmdheight) * cfg.height)
-  local row = math.floor((lines - height) / 2) - 1
-  local col = math.floor((columns - width) / 2)
+  local total_width = math.floor(vim.o.columns * cfg.width)
+  local total_height = math.floor((vim.o.lines - vim.o.cmdheight) * cfg.height)
+  local input_height = cfg.input_height
+  local message_height = total_height - input_height - 2
+  local row = math.max(math.floor((vim.o.lines - total_height) / 2) - 1, 0)
+  local col = math.max(math.floor((vim.o.columns - total_width) / 2), 0)
+  return cfg, total_width, message_height, input_height, row, col
+end
 
-  return vim.api.nvim_open_win(buf_id, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = math.max(row, 0),
-    col = math.max(col, 0),
-    border = cfg.border,
-    title = cfg.title,
-    style = "minimal",
-  })
+local function ensure_buffers()
+  if not valid_buf(state.message_buf) then
+    state.message_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[state.message_buf].bufhidden = "hide"
+    vim.bo[state.message_buf].filetype = "markdown"
+    vim.bo[state.message_buf].modifiable = false
+  end
+  if not valid_buf(state.input_buf) then
+    state.input_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[state.input_buf].bufhidden = "hide"
+    vim.bo[state.input_buf].filetype = "markdown"
+    vim.bo[state.input_buf].buftype = "acwrite"
+    vim.keymap.set("n", "<C-s>", function()
+      require("opencode_chat").submit()
+    end, { buffer = state.input_buf, silent = true, desc = "Submit opencode prompt" })
+    vim.keymap.set("i", "<C-s>", function()
+      require("opencode_chat").submit()
+    end, { buffer = state.input_buf, silent = true, desc = "Submit opencode prompt" })
+  end
+end
+
+local function open_windows()
+  ensure_buffers()
+  local cfg, width, message_height, input_height, row, col = layout()
+  if not valid_win(state.message_win) then
+    state.message_win = vim.api.nvim_open_win(state.message_buf, true, {
+      relative = "editor",
+      width = width,
+      height = message_height,
+      row = row,
+      col = col,
+      border = cfg.border,
+      title = cfg.title,
+      style = "minimal",
+    })
+  end
+  if not valid_win(state.input_win) then
+    state.input_win = vim.api.nvim_open_win(state.input_buf, true, {
+      relative = "editor",
+      width = width,
+      height = input_height,
+      row = row + message_height + 2,
+      col = col,
+      border = cfg.border,
+      title = cfg.input_title,
+      style = "minimal",
+    })
+  end
 end
 
 function M.state()
@@ -44,7 +86,7 @@ function M.state()
 end
 
 function M.render()
-  if not valid_buf(state.buf_id) then
+  if not valid_buf(state.message_buf) then
     return
   end
 
@@ -52,59 +94,52 @@ function M.render()
   if #state.context > 0 then
     table.insert(lines, "## Context")
     for _, item in ipairs(state.context) do
-      table.insert(lines, "- " .. item)
+      table.insert(lines, "- " .. item.label)
     end
     table.insert(lines, "")
   end
 
   if #state.messages == 0 then
-    table.insert(lines, "Use :OpencodeAsk to send a prompt.")
-    table.insert(lines, "Use Visual <M--> or :OpencodeAppendSelection to add context.")
+    table.insert(lines, "在下方输入区写问题，按 <C-s> 提交。")
+    table.insert(lines, "Visual <M--> 可加入选区上下文。")
   else
     for _, msg in ipairs(state.messages) do
       table.insert(lines, "## " .. msg.role)
       table.insert(lines, "")
-      for line in tostring(msg.text):gmatch("([^\n]*)\n?") do
-        if line == "" and #lines > 0 and lines[#lines] == "" then
-          -- keep output compact
-        else
-          table.insert(lines, line)
-        end
+      local text = tostring(msg.text or "")
+      for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+        table.insert(lines, line)
       end
       table.insert(lines, "")
     end
   end
 
-  vim.bo[state.buf_id].modifiable = true
-  vim.api.nvim_buf_set_lines(state.buf_id, 0, -1, false, lines)
-  vim.bo[state.buf_id].modifiable = false
+  vim.bo[state.message_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(state.message_buf, 0, -1, false, lines)
+  vim.bo[state.message_buf].modifiable = false
 end
 
 function M.show()
-  if not valid_buf(state.buf_id) then
-    state.buf_id = vim.api.nvim_create_buf(false, true)
-    vim.bo[state.buf_id].bufhidden = "hide"
-    vim.bo[state.buf_id].filetype = "markdown"
-    vim.bo[state.buf_id].modifiable = false
-  end
-  if not valid_win(state.win_id) then
-    state.win_id = open_float(state.buf_id)
-  else
-    vim.api.nvim_set_current_win(state.win_id)
-  end
+  open_windows()
   M.render()
+  vim.api.nvim_set_current_win(state.input_win)
+  vim.cmd("startinsert")
   return state
 end
 
 function M.hide()
-  if valid_win(state.win_id) then
-    vim.api.nvim_win_close(state.win_id, true)
-    state.win_id = nil
+  if valid_win(state.message_win) then
+    vim.api.nvim_win_close(state.message_win, true)
   end
+  if valid_win(state.input_win) then
+    vim.api.nvim_win_close(state.input_win, true)
+  end
+  state.message_win = nil
+  state.input_win = nil
 end
 
 function M.toggle()
-  if valid_win(state.win_id) then
+  if valid_win(state.message_win) or valid_win(state.input_win) then
     M.hide()
   else
     M.show()
@@ -112,8 +147,8 @@ function M.toggle()
   return state
 end
 
-function M.add_context(ref, project_root)
-  table.insert(state.context, ref)
+function M.add_context(item, project_root)
+  table.insert(state.context, item)
   state.context_root = project_root or state.context_root
   M.show()
 end
@@ -126,9 +161,48 @@ function M.consume_context()
   return items, project_root
 end
 
+function M.context_prompt(items)
+  local out = {}
+  for _, item in ipairs(items or {}) do
+    table.insert(out, item.label)
+    if item.text and item.text ~= "" then
+      table.insert(out, "```" .. (item.ft or ""))
+      table.insert(out, item.text)
+      table.insert(out, "```")
+    end
+  end
+  return table.concat(out, "\n")
+end
+
 function M.add_message(role, text)
   table.insert(state.messages, { role = role, text = text })
   M.show()
+end
+
+function M.replace_last_if(role, old_text, new_role, new_text)
+  local messages = state.messages
+  if messages[#messages] and messages[#messages].role == role and messages[#messages].text == old_text then
+    messages[#messages] = { role = new_role, text = new_text }
+  else
+    table.insert(messages, { role = new_role, text = new_text })
+  end
+  M.render()
+end
+
+function M.input_text()
+  if not valid_buf(state.input_buf) then
+    return ""
+  end
+  return vim.trim(table.concat(vim.api.nvim_buf_get_lines(state.input_buf, 0, -1, false), "\n"))
+end
+
+function M.set_input(text)
+  ensure_buffers()
+  vim.api.nvim_buf_set_lines(state.input_buf, 0, -1, false, vim.split(text or "", "\n", { plain = true }))
+end
+
+function M.clear_input()
+  M.set_input("")
 end
 
 function M.clear()
@@ -136,14 +210,19 @@ function M.clear()
   state.context = {}
   state.context_root = nil
   M.render()
+  M.clear_input()
 end
 
 function M.close()
   M.hide()
-  if valid_buf(state.buf_id) then
-    vim.api.nvim_buf_delete(state.buf_id, { force = true })
+  if valid_buf(state.message_buf) then
+    vim.api.nvim_buf_delete(state.message_buf, { force = true })
   end
-  state.buf_id = nil
+  if valid_buf(state.input_buf) then
+    vim.api.nvim_buf_delete(state.input_buf, { force = true })
+  end
+  state.message_buf = nil
+  state.input_buf = nil
 end
 
 return M

@@ -41,9 +41,9 @@ These routing rules are mandatory for this repository.
 ## Architecture highlights
 
 - Use native Neovim buffers/floating windows for the MVP UI; do not add `vim-floaterm` support.
-- MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /api/session`, and `POST /api/session/:sessionID/prompt`.
+- MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session`, and `POST /session/:sessionID/message`, with legacy `/api/session` fallback only for compatibility.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
-- Visual-mode context append must not submit the prompt; it queues the selection reference for the next `:OpencodeAsk`.
+- Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.
 - Project root markers are `.root`, `.git`, `.svn`, `.hg`, `.project`, `.ccls`.
 
@@ -53,19 +53,21 @@ These routing rules are mandatory for this repository.
 - `lua/opencode_chat/root.lua`: project root detection from root markers.
 - `lua/opencode_chat/server.lua`: headless opencode server job and session lifecycle.
 - `lua/opencode_chat/client.lua`: HTTP wrapper for session creation and prompt submission.
-- `lua/opencode_chat/ui.lua`: native floating chat buffer rendering and queued context display.
+- `lua/opencode_chat/ui.lua`: native floating message/input buffers, rendering, and queued context display.
+- `lua/opencode_chat/diff.lua`: unified diff preview plus apply/reject for edit MVP.
 - `lua/opencode_chat/context.lua`: current-file and Visual-selection reference generation.
 - `lua/opencode_chat/commands.lua`: command registration such as `:OpencodeToggle`.
 - `lua/opencode_chat/init.lua`: public setup/API entrypoint.
 
 ## Explicit non-goals for the MVP
 
-- Do not implement diff apply, file tree, multi-session picker, prompt templates, or agent/mode management yet.
+- Do not implement file tree, multi-session picker, prompt templates, or agent/mode management yet.
 - Do not add a floaterm backend.
 
 ## Validation focus
 
-- Manually verify that `:OpencodeAsk` creates a session, sends a prompt, and renders the assistant response in the native UI.
+- Manually verify that input `<C-s>` or `:OpencodeAsk` creates a session, sends a prompt, and renders the assistant response in the native UI.
+- Manually verify `:OpencodeEdit`, `:OpencodeApply`, and `:OpencodeReject` only operate on sandbox/test files unless intentionally targeting a real file.
 - Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
 - Manually verify that reversed Visual selections still produce ascending line ranges.
 

@@ -11,6 +11,7 @@ local state = {
   job_id = nil,
   session_id = nil,
   project_id = nil,
+  api_style = nil,
   started = false,
 }
 
@@ -59,12 +60,13 @@ function M.ensure_started(startpath, cb)
     client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
       state.project_id = project_id
 
-      client.create_session(state.root, { host = cfg.host, port = state.port }, function(created, session_id, _data, create_result)
+      client.create_session(state.root, { host = cfg.host, port = state.port }, function(created, session_id, _data, create_result, api_style)
         if not created then
           cb(false, state, create_result and (create_result.stderr or create_result.body or create_result.stdout) or "failed to create session")
           return
         end
         state.session_id = session_id
+        state.api_style = api_style
         cb(true, state)
       end)
     end)
@@ -78,9 +80,14 @@ function M.send(text, startpath, cb)
       cb(false, nil, err)
       return
     end
-    client.send_prompt(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model }, function(sent, data, result, reply)
+    client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model }, function(sent, data, result, reply)
       if not sent then
         cb(false, nil, result and (result.stderr or result.body or result.stdout) or "prompt failed")
+        return
+      end
+
+      if reply and reply ~= "" then
+        cb(true, reply, data)
         return
       end
 
@@ -89,12 +96,6 @@ function M.send(text, startpath, cb)
           cb(true, assistant_text, history)
           return
         end
-
-        if reply ~= "" and reply ~= text then
-          cb(true, reply, data)
-          return
-        end
-
         cb(false, nil, history_result and (history_result.stderr or history_result.body or history_result.stdout) or "assistant response not found")
       end)
     end)
@@ -110,6 +111,7 @@ function M.stop()
   state.job_id = nil
   state.session_id = nil
   state.project_id = nil
+  state.api_style = nil
   state.started = false
 end
 
