@@ -143,6 +143,20 @@ local function text_from_parts(parts)
   return table.concat(out, "\n")
 end
 
+local function model_object(model)
+  if type(model) == "table" then
+    return model
+  end
+  if type(model) ~= "string" or model == "" then
+    return nil
+  end
+  local provider_id, model_id = model:match("^([^/]+)/(.+)$")
+  if not provider_id or not model_id then
+    return nil
+  end
+  return { providerID = provider_id, modelID = model_id }
+end
+
 function M.extract_message_text(message)
   if type(message) ~= "table" then
     return ""
@@ -212,7 +226,7 @@ function M.send_message(session_id, text, opts, cb)
   opts = opts or {}
   local payload = { parts = { { type = "text", text = text } } }
   if opts.model then
-    payload.model = opts.model
+    payload.model = model_object(opts.model)
   end
   if opts.agent then
     payload.agent = opts.agent
@@ -255,6 +269,8 @@ function M.send_message(session_id, text, opts, cb)
     send_legacy()
   end)
 end
+
+M._model_object = model_object
 
 function M.get_messages(session_id, opts, cb)
   get_json(M.message_url(session_id, opts), cb)
