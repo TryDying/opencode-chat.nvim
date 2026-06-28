@@ -37,3 +37,10 @@
 - 方案：启动后读取 `/project` 保存 `projectID`，assistant history 读取先尝试实例路径，失败后回退到 project 路径，并让 HTTP helper 正确识别非 2xx 状态。
 - 预防：fake server 必须模拟不支持的 history 路径返回 404，只在真实兼容路径返回 assistant 消息，避免理想化测试掩盖 API 路径问题。
 - commitID：14662c3
+
+## 2026-06-28：MVP 测试必须覆盖真实工作流而非示例文件
+
+- 问题：旧测试打开 README.md 且只覆盖简单 chat happy path，无法暴露 UI 输入体验差、上下文未带源码、edit/apply 缺失和 API 主路径偏旧等问题。
+- 方案：重构为消息区 + 输入区的 Chat UI，测试改用 `/tmp` sandbox 代码文件，API 优先 `/session` 与 `/session/:id/message`，并补齐读取源码、diff preview、apply/reject 闭环。
+- 预防：后续每个阶段都应在 sandbox 中验证“读取代码、提问、生成修改、预览、应用”的端到端路径，避免只测命令存在或单函数成功。
+- commitID：c703368
