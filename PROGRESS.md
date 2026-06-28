@@ -65,3 +65,10 @@
 - 方案：配置仍允许 `provider/model` 字符串，发送新版 message API 时自动转换为 `{ providerID, modelID }`；旧 API fallback 仍保留字符串格式。
 - 预防：测试需断言新版 payload 的 `model.providerID` 和 `model.modelID`，避免把配置格式与 HTTP schema 混同。
 - commitID：da48cde
+
+## 2026-06-28：Chat UI 必须管理焦点、滚动和请求生命周期
+
+- 问题：消息区只能靠鼠标聚焦、回复不会自动滚动到底部，且请求未完成时继续提交会堆叠多个 `Thinking...`，造成看似卡死。
+- 方案：为消息区/输入区加入 `<Tab>` 键盘切换，渲染后自动滚动到末尾，新增 `<C-c>`/`:OpencodeCancel`，并在请求处理中阻止重复提交。
+- 预防：交互测试必须覆盖 pane focus、auto-scroll、busy guard 和 cancel，不只验证 assistant 文本是否出现。
+- commitID：bc1b935
