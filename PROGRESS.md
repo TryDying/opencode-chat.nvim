@@ -23,3 +23,10 @@
 - 方案：发送 prompt 后轮询 message history，只提取 `info.role == "assistant"` 且 `parts[].type == "text"` 的文本作为 assistant 回复。
 - 预防：测试 fixture 必须模拟“prompt 接口返回用户消息、history 才包含 assistant 消息”的场景，防止再次误把用户回显当回复。
 - commitID：d76d26b
+
+## 2026-06-28：Visual 快捷键不能只依赖 `'<`/`'>` marks
+
+- 问题：Visual 模式 Lua keymap 触发时，`'<`/`'>` marks 可能尚未写入，导致 `<M-->` 追加选区上下文时报 `visual selection marks are not available`。
+- 方案：选区引用生成优先读取 `'<`/`'>`，不可用时回退到当前 Visual 起点 `v` 和光标 `.` 的行号。
+- 预防：测试必须覆盖 active Visual selection 尚未落 marks 的路径，不能只用 `setpos("'<")` / `setpos("'>")` 模拟已完成选择。
+- commitID：794ceac
