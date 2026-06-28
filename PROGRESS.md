@@ -72,3 +72,10 @@
 - 方案：为消息区/输入区加入 `<Tab>` 键盘切换，渲染后自动滚动到末尾，新增 `<C-c>`/`:OpencodeCancel`，并在请求处理中阻止重复提交。
 - 预防：交互测试必须覆盖 pane focus、auto-scroll、busy guard 和 cancel，不只验证 assistant 文本是否出现。
 - commitID：bc1b935
+
+## 2026-06-28：取消与会话配置必须遵循 opencode 后端语义
+
+- 问题：取消只停止本地 curl/轮询并由 UI 伪造 `Cancelled`，没有通知 opencode 后端；同时 `agent/model/variant` 被放进每条 message，而实际更应属于 session 创建配置。
+- 方案：取消改为调用 `POST /session/:sessionID/abort`，UI 在 abort 成功后显示 `Cancelled by opencode.`；`agent/model/variant` 改为随 `POST /session` 发送，普通 message 只发送 prompt parts。
+- 预防：测试必须断言 abort endpoint 被调用、单次取消只渲染一条取消状态、session create payload 含配置且 message payload 不重复配置。
+- commitID：86a3c94
