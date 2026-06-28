@@ -63,6 +63,12 @@ vim.fn.setpos("'<", { 0, 3, 1, 0 })
 vim.fn.setpos("'>", { 0, 1, 1, 0 })
 assert_eq(context.selection_reference(0), "@src/example.lua#L1-L3", "selection_reference should sort reversed visual marks")
 
+vim.fn.setpos("'<", { 0, 0, 0, 0 })
+vim.fn.setpos("'>", { 0, 0, 0, 0 })
+vim.cmd("normal! ggVjj")
+assert_eq(context.selection_reference(0), "@src/example.lua#L1-L3", "selection_reference should fall back to active visual positions")
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session URL should match headless API")
 assert_eq(client.prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "prompt URL should match headless API")
 assert_eq(client.messages_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "messages URL should match headless API")
