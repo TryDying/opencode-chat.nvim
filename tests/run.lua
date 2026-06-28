@@ -96,6 +96,7 @@ vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should prefer current API")
 assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
+assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
 assert_eq(client.extract_assistant_text({
   { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
   { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
@@ -110,17 +111,23 @@ ui.set_input("这是啥")
 opencode.submit()
 
 local prompt_file = tmp .. "/.opencode-chat-prompt.jsonl"
+local session_file = tmp .. "/.opencode-chat-session.jsonl"
 assert_true(wait_for(function()
-  return vim.fn.filereadable(prompt_file) == 1 and server.state().session_id == "test-session"
+  return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session"
 end, 5000), "submit should create session and send prompt to fake headless server")
+
+local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
+assert_eq(session_payload.agent, "build", "session create should include configured opencode agent")
+assert_eq(session_payload.model.providerID, "deepseek", "session create model should include providerID")
+assert_eq(session_payload.model.id, "deepseek-v4-flash", "session create model should include model id")
+assert_eq(session_payload.model.variant, "low", "session create model should include variant")
 
 local lines = vim.fn.readfile(prompt_file)
 local payload = vim.json.decode(lines[#lines])
 local sent_text = payload.parts[1].text
-assert_eq(payload.agent, "build", "payload should include configured opencode agent")
-assert_eq(payload.model.providerID, "deepseek", "payload model should include providerID for current API")
-assert_eq(payload.model.modelID, "deepseek-v4-flash", "payload model should include modelID for current API")
-assert_eq(payload.variant, "low", "payload should include configured variant")
+assert_eq(payload.agent, nil, "message payload should not repeat session agent")
+assert_eq(payload.model, nil, "message payload should not repeat session model")
+assert_eq(payload.variant, nil, "message payload should not repeat session variant")
 assert_true(sent_text:match("@src/example.lua") ~= nil, "prompt should include queued context label")
 assert_true(sent_text:match("function M.add") ~= nil, "prompt should include queued context code")
 assert_true(sent_text:match("这是啥") ~= nil, "prompt should include input text")
@@ -148,8 +155,16 @@ assert_true(opencode._request.busy, "second request should not start while busy"
 opencode.cancel()
 assert_true(wait_for(function()
   local messages = ui.state().messages
-  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Cancelled"
-end, 1000), "cancel should clear busy state and render cancellation")
+  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Cancelled" and messages[#messages].text == "Cancelled by opencode."
+end, 2000), "cancel should abort backend and render cancellation")
+assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-abort.jsonl") == 1, "cancel should call opencode session abort endpoint")
+local cancelled_count = 0
+for _, message in ipairs(ui.state().messages) do
+  if message.role == "Cancelled" then
+    cancelled_count = cancelled_count + 1
+  end
+end
+assert_eq(cancelled_count, 1, "single cancel should render exactly one Cancelled message")
 
 local first_job = server.state().job_id
 opencode.toggle()

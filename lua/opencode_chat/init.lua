@@ -7,6 +7,7 @@ local commands = require("opencode_chat.commands")
 local M = {}
 local request = {
   busy = false,
+  cancelling = false,
   id = 0,
 }
 
@@ -104,11 +105,24 @@ function M.cancel()
     notify_error("no active opencode request")
     return
   end
+  if request.cancelling then
+    notify_error("opencode request is already cancelling")
+    return
+  end
   request.id = request.id + 1
-  request.busy = false
-  server.cancel()
-  ui.replace_last_if("Assistant", "Thinking...", "Cancelled", "Request cancelled.")
-  ui.replace_last_if("Assistant", "Editing...", "Cancelled", "Request cancelled.")
+  request.cancelling = true
+  ui.mark_cancelling()
+  server.cancel(function(ok, message)
+    vim.schedule(function()
+      request.busy = false
+      request.cancelling = false
+      if ok then
+        ui.replace_last_if("System", "Cancelling...", "Cancelled", "Cancelled by opencode.")
+      else
+        ui.replace_last_if("System", "Cancelling...", "Error", tostring(message or "cancel failed"))
+      end
+    end)
+  end)
 end
 
 function M.append_file()
@@ -171,6 +185,7 @@ end
 
 function M.stop()
   request.busy = false
+  request.cancelling = false
   request.id = request.id + 1
   server.stop()
   ui.close()

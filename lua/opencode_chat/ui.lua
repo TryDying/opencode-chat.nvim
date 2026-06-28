@@ -231,6 +231,17 @@ function M.replace_last_if(role, old_text, new_role, new_text)
   M.render()
 end
 
+function M.mark_cancelling()
+  local messages = state.messages
+  local last = messages[#messages]
+  if last and last.role == "Assistant" and (last.text == "Thinking..." or last.text == "Editing...") then
+    messages[#messages] = { role = "System", text = "Cancelling..." }
+  else
+    table.insert(messages, { role = "System", text = "Cancelling..." })
+  end
+  M.render()
+end
+
 function M.input_text()
   if not valid_buf(state.input_buf) then
     return ""

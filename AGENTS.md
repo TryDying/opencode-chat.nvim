@@ -42,6 +42,8 @@ These routing rules are mandatory for this repository.
 
 - Use native Neovim buffers/floating windows for the MVP UI; do not add `vim-floaterm` support.
 - MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session`, and `POST /session/:sessionID/message`, with legacy `/api/session` fallback only for compatibility.
+- `agent`, `model`, and `variant` are session-create options; do not repeat them in current `/session/:sessionID/message` payloads unless the server schema explicitly requires it.
+- Cancellation must call `POST /session/:sessionID/abort`; do not represent local curl/loop termination as backend cancellation.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
 - Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.
@@ -66,7 +68,7 @@ These routing rules are mandatory for this repository.
 ## Validation focus
 
 - Manually verify that input `<C-s>` or `:OpencodeAsk` creates a session, sends a prompt, and renders the assistant response in the native UI.
-- Manually verify message/input pane keyboard switching with `<Tab>`, auto-scroll to latest messages, and cancellation with `<C-c>` or `:OpencodeCancel`.
+- Manually verify message/input pane keyboard switching with `<Tab>`, auto-scroll to latest messages, and backend cancellation with `<C-c>` or `:OpencodeCancel`.
 - Manually verify `:OpencodeEdit` operates on sandbox/test files unless intentionally targeting a real file; opencode backend is expected to perform edits.
 - Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
 - Manually verify that reversed Visual selections still produce ascending line ranges.

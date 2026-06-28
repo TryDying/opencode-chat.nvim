@@ -29,6 +29,14 @@ function M.message_url(session_id, opts)
   return url("/session/" .. session_id .. "/message", opts)
 end
 
+function M.abort_url(session_id, opts)
+  return url("/session/" .. session_id .. "/abort", opts)
+end
+
+function M.v1_abort_url(session_id, opts)
+  return url("/v1/sessions/" .. session_id .. "/abort", opts)
+end
+
 function M.legacy_prompt_url(session_id, opts)
   return url("/api/session/" .. session_id .. "/prompt", opts)
 end
@@ -154,7 +162,15 @@ local function model_object(model)
   if not provider_id or not model_id then
     return nil
   end
-  return { providerID = provider_id, modelID = model_id }
+  return { providerID = provider_id, id = model_id }
+end
+
+local function session_model(model, variant)
+  local value = model_object(model)
+  if value and variant and variant ~= "" then
+    value.variant = variant
+  end
+  return value
 end
 
 function M.extract_message_text(message)
@@ -208,7 +224,15 @@ end
 
 function M.create_session(directory, opts, cb)
   opts = opts or {}
-  return post_json(M.session_url(opts), { title = vim.fn.fnamemodify(directory, ":t") }, function(ok, data, result)
+  local payload = { title = vim.fn.fnamemodify(directory, ":t") }
+  if opts.agent then
+    payload.agent = opts.agent
+  end
+  if opts.model then
+    payload.model = session_model(opts.model, opts.variant)
+  end
+
+  return post_json(M.session_url(opts), payload, function(ok, data, result)
     local id = data and ((data.data and data.data.id) or data.id)
     if ok and id then
       cb(true, id, data, result, "session")
@@ -225,15 +249,6 @@ end
 function M.send_message(session_id, text, opts, cb)
   opts = opts or {}
   local payload = { parts = { { type = "text", text = text } } }
-  if opts.model then
-    payload.model = model_object(opts.model)
-  end
-  if opts.agent then
-    payload.agent = opts.agent
-  end
-  if opts.variant then
-    payload.variant = opts.variant
-  end
   local function send_legacy()
     local legacy_payload = { prompt = { text = text } }
     if opts.model then
@@ -270,6 +285,21 @@ function M.send_message(session_id, text, opts, cb)
 end
 
 M._model_object = model_object
+M._session_model = session_model
+
+function M.abort_session(session_id, opts, cb)
+  opts = opts or {}
+  return post_json(M.abort_url(session_id, opts), {}, function(ok, data, result)
+    if ok then
+      cb(true, data, result, "session")
+      return
+    end
+
+    post_json(M.v1_abort_url(session_id, opts), {}, function(v1_ok, v1_data, v1_result)
+      cb(v1_ok, v1_data, v1_result, "v1")
+    end)
+  end)
+end
 
 function M.get_messages(session_id, opts, cb)
   get_json(M.message_url(session_id, opts), cb)

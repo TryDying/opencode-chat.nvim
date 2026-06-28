@@ -61,7 +61,7 @@ function M.ensure_started(startpath, cb)
     client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
       state.project_id = project_id
 
-      client.create_session(state.root, { host = cfg.host, port = state.port }, function(created, session_id, _data, create_result, api_style)
+      client.create_session(state.root, { host = cfg.host, port = state.port, agent = cfg.agent, model = cfg.model, variant = cfg.variant }, function(created, session_id, _data, create_result, api_style)
         if not created then
           cb(false, state, client.format_error(create_result, "failed to create session"))
           return
@@ -105,7 +105,7 @@ function M.send(text, startpath, cb)
   end)
 end
 
-function M.cancel()
+function M.cancel(cb)
   if active then
     if active.cancel then
       active.cancel()
@@ -115,6 +115,18 @@ function M.cancel()
       end)
     end
     active = nil
+  end
+
+  if state.session_id and state.api_style == "session" then
+    return client.abort_session(state.session_id, { host = config.get().host, port = state.port }, function(ok, _data, result)
+      if cb then
+        cb(ok, ok and "cancelled" or client.format_error(result, "cancel failed"))
+      end
+    end)
+  end
+
+  if cb then
+    cb(false, "backend abort is unavailable for this session")
   end
 end
 

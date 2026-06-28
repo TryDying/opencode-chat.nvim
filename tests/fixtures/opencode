@@ -11,6 +11,7 @@ import time
 
 SESSION_ID = "test-session"
 MESSAGES = []
+ABORTED = False
 
 
 def text_part(message_id, text):
@@ -37,12 +38,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._text("not found", 404)
 
     def do_POST(self):
-        global MESSAGES
+        global MESSAGES, ABORTED
         length = int(self.headers.get("content-length", "0"))
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body) if body else {}
 
         if self.path == "/session":
+            self._record_session(data)
             self._json({"id": SESSION_ID, "title": data.get("title")})
             return
 
@@ -55,6 +57,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._record_prompt(data)
             if "slow response" in text:
                 time.sleep(5)
+                if ABORTED:
+                    self._text("aborted", 499)
+                    return
             user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
             if "make add subtract" in text or "改成减法" in text:
                 target = os.path.join(os.getcwd(), "src", "example.lua")
@@ -72,6 +77,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(assistant)
             return
 
+        if self.path == f"/session/{SESSION_ID}/abort":
+            ABORTED = True
+            with open(os.path.join(os.getcwd(), ".opencode-chat-abort.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionID": SESSION_ID}, ensure_ascii=False) + "\n")
+            self._json({"ok": True})
+            return
+
         if re.match(r"^/api/session/[^/]+/prompt$", self.path):
             text = data.get("prompt", {}).get("text", "")
             self._record_prompt(data)
@@ -85,6 +97,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _record_prompt(self, data):
         with open(os.path.join(os.getcwd(), ".opencode-chat-prompt.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+    def _record_session(self, data):
+        with open(os.path.join(os.getcwd(), ".opencode-chat-session.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
     def _json(self, data, status=200):
