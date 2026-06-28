@@ -44,3 +44,10 @@
 - 方案：重构为消息区 + 输入区的 Chat UI，测试改用 `/tmp` sandbox 代码文件，API 优先 `/session` 与 `/session/:id/message`，并补齐读取源码、diff preview、apply/reject 闭环。
 - 预防：后续每个阶段都应在 sandbox 中验证“读取代码、提问、生成修改、预览、应用”的端到端路径，避免只测命令存在或单函数成功。
 - commitID：c703368
+
+## 2026-06-28：opencode 后端编辑不应被强制改成本地 diff/apply
+
+- 问题：插件把 `:OpencodeEdit` 设计成模型产出 diff、插件本地 apply，但真实 opencode agent 会在后端直接完成文件编辑，导致交互模型不符合预期。
+- 方案：`OpencodeEdit` 改为向配置的 opencode agent 发送编辑请求并渲染 assistant 总结；测试模拟后端直接修改 sandbox 文件，并断言 `agent/model/variant` payload。
+- 预防：集成已有 agent 后端时，优先尊重后端工作流；只有后端不负责写入时，才在插件层设计本地 diff/apply。
+- commitID：44fcb84
