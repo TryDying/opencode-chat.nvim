@@ -30,3 +30,10 @@
 - 方案：选区引用生成优先读取 `'<`/`'>`，不可用时回退到当前 Visual 起点 `v` 和光标 `.` 的行号。
 - 预防：测试必须覆盖 active Visual selection 尚未落 marks 的路径，不能只用 `setpos("'<")` / `setpos("'>")` 模拟已完成选择。
 - commitID：794ceac
+
+## 2026-06-28：真实 opencode history 路径必须纳入测试
+
+- 问题：实现只轮询 `/session/:id/message`，但真实 opencode 的 project API 使用 `/project/:projectID/session/:sessionID/message`，导致发送后只能显示空 Error。
+- 方案：启动后读取 `/project` 保存 `projectID`，assistant history 读取先尝试实例路径，失败后回退到 project 路径，并让 HTTP helper 正确识别非 2xx 状态。
+- 预防：fake server 必须模拟不支持的 history 路径返回 404，只在真实兼容路径返回 assistant 消息，避免理想化测试掩盖 API 路径问题。
+- commitID：14662c3
