@@ -85,9 +85,27 @@ local function finish(result, cb)
   local body, status = split_body_status(result.stdout)
   result.body = body
   result.status = status
-  result.error = result.stderr or body or result.stdout or ""
+  local stderr = result.stderr and result.stderr ~= "" and result.stderr or nil
+  result.error = stderr or body or result.stdout or ""
   local ok = result.code == 0 and status and status >= 200 and status < 300
   cb(ok, decode_json(body), result)
+end
+
+function M.format_error(result, fallback)
+  if not result then
+    return fallback or "opencode request failed"
+  end
+  local body = result.body or result.stdout or result.stderr or ""
+  if result.status then
+    if body ~= "" then
+      return string.format("HTTP %d: %s", result.status, body)
+    end
+    return string.format("HTTP %d", result.status)
+  end
+  if result.code and result.code ~= 0 then
+    return string.format("command failed (%s): %s", result.code, body ~= "" and body or (fallback or "opencode request failed"))
+  end
+  return body ~= "" and body or (fallback or "opencode request failed")
 end
 
 local function get_json(target_url, cb)
@@ -202,12 +220,7 @@ function M.send_message(session_id, text, opts, cb)
   if opts.variant then
     payload.variant = opts.variant
   end
-  post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
-    if ok then
-      cb(true, data, result, M.extract_message_text(data), "session")
-      return
-    end
-
+  local function send_legacy()
     local legacy_payload = { prompt = { text = text } }
     if opts.model then
       legacy_payload.model = opts.model
@@ -221,6 +234,25 @@ function M.send_message(session_id, text, opts, cb)
     post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
       cb(legacy_ok, legacy_data, legacy_result, M.extract_message_text(legacy_data), "legacy")
     end)
+  end
+
+  if opts.api_style == "legacy" then
+    send_legacy()
+    return
+  end
+
+  post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
+    if ok then
+      cb(true, data, result, M.extract_message_text(data), "session")
+      return
+    end
+
+    if opts.api_style == "session" then
+      cb(false, data, result, "", "session")
+      return
+    end
+
+    send_legacy()
   end)
 end
 

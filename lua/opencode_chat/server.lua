@@ -62,7 +62,7 @@ function M.ensure_started(startpath, cb)
 
       client.create_session(state.root, { host = cfg.host, port = state.port }, function(created, session_id, _data, create_result, api_style)
         if not created then
-          cb(false, state, create_result and (create_result.stderr or create_result.body or create_result.stdout) or "failed to create session")
+          cb(false, state, client.format_error(create_result, "failed to create session"))
           return
         end
         state.session_id = session_id
@@ -80,9 +80,9 @@ function M.send(text, startpath, cb)
       cb(false, nil, err)
       return
     end
-    client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model, agent = cfg.agent, variant = cfg.variant }, function(sent, data, result, reply)
+    client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model, agent = cfg.agent, variant = cfg.variant, api_style = current.api_style }, function(sent, data, result, reply)
       if not sent then
-        cb(false, nil, result and (result.stderr or result.body or result.stdout) or "prompt failed")
+        cb(false, nil, client.format_error(result, "prompt failed"))
         return
       end
 
@@ -96,7 +96,7 @@ function M.send(text, startpath, cb)
           cb(true, assistant_text, history)
           return
         end
-        cb(false, nil, history_result and (history_result.stderr or history_result.body or history_result.stdout) or "assistant response not found")
+        cb(false, nil, client.format_error(history_result, "assistant response not found"))
       end)
     end)
   end)

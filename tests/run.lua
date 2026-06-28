@@ -99,6 +99,7 @@ assert_eq(client.extract_assistant_text({
   { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
   { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
 }), "answer", "extract_assistant_text should ignore user echo and read assistant text parts")
+assert_eq(client.format_error({ status = 400, body = "bad request", stderr = "" }, "fallback"), "HTTP 400: bad request", "format_error should not let empty stderr hide HTTP body")
 
 opencode.append_file()
 assert_eq(ui.state().context[1].label, "@src/example.lua", "append_file should add structured context")
