@@ -10,6 +10,7 @@ local state = {
   port = nil,
   job_id = nil,
   session_id = nil,
+  project_id = nil,
   started = false,
 }
 
@@ -55,13 +56,17 @@ function M.ensure_started(startpath, cb)
       cb(false, state, result and (result.stderr or result.stdout) or "opencode server not ready")
       return
     end
-    client.create_session(state.root, { host = cfg.host, port = state.port }, function(created, session_id, _data, create_result)
-      if not created then
-        cb(false, state, create_result and (create_result.stderr or create_result.stdout) or "failed to create session")
-        return
-      end
-      state.session_id = session_id
-      cb(true, state)
+    client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
+      state.project_id = project_id
+
+      client.create_session(state.root, { host = cfg.host, port = state.port }, function(created, session_id, _data, create_result)
+        if not created then
+          cb(false, state, create_result and (create_result.stderr or create_result.body or create_result.stdout) or "failed to create session")
+          return
+        end
+        state.session_id = session_id
+        cb(true, state)
+      end)
     end)
   end)
 end
@@ -75,11 +80,11 @@ function M.send(text, startpath, cb)
     end
     client.send_prompt(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model }, function(sent, data, result, reply)
       if not sent then
-        cb(false, nil, result and (result.stderr or result.stdout) or "prompt failed")
+        cb(false, nil, result and (result.stderr or result.body or result.stdout) or "prompt failed")
         return
       end
 
-      client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
+      client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
         if found then
           cb(true, assistant_text, history)
           return
@@ -90,7 +95,7 @@ function M.send(text, startpath, cb)
           return
         end
 
-        cb(false, nil, history_result and (history_result.stderr or history_result.stdout) or "assistant response not found")
+        cb(false, nil, history_result and (history_result.stderr or history_result.body or history_result.stdout) or "assistant response not found")
       end)
     end)
   end)
@@ -104,6 +109,7 @@ function M.stop()
   state.port = nil
   state.job_id = nil
   state.session_id = nil
+  state.project_id = nil
   state.started = false
 end
 

@@ -19,7 +19,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"ok")
             return
-        if self.path == f"/session/{SESSION_ID}/message":
+        if self.path == "/project":
+            self._json([{"id": "test-project", "worktree": os.getcwd()}])
+            return
+        if self.path == f"/project/test-project/session/{SESSION_ID}/message":
             self._json([
                 {
                     "info": {"id": "user-message", "role": "user"},
@@ -33,6 +36,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         self.send_response(404)
         self.end_headers()
+        self.wfile.write(b"not found")
 
     def do_POST(self):
         global LAST_PROMPT
@@ -54,6 +58,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         self.send_response(404)
         self.end_headers()
+        self.wfile.write(b"not found")
 
     def _json(self, data):
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")

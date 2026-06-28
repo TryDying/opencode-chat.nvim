@@ -72,6 +72,8 @@ vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session URL should match headless API")
 assert_eq(client.prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "prompt URL should match headless API")
 assert_eq(client.messages_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "messages URL should match headless API")
+assert_eq(client.project_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project", "project URL should match headless API")
+assert_eq(client.project_messages_url("p", "abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/p/session/abc/message", "project messages URL should match headless API")
 assert_eq(client.extract_assistant_text({
   { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
   { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
@@ -84,7 +86,7 @@ opencode.ask("hello")
 
 local prompt_file = tmp .. "/.opencode-chat-prompt.jsonl"
 assert_true(wait_for(function()
-  return vim.fn.filereadable(prompt_file) == 1 and server.state().session_id == "test-session"
+  return vim.fn.filereadable(prompt_file) == 1 and server.state().session_id == "test-session" and server.state().project_id == "test-project"
 end, 5000), "ask should create session and send prompt to fake headless server")
 
 local lines = vim.fn.readfile(prompt_file)

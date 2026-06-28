@@ -17,12 +17,24 @@ function M.session_url(opts)
   return url("/api/session", opts)
 end
 
+function M.project_url(opts)
+  return url("/project", opts)
+end
+
+function M.project_session_url(project_id, opts)
+  return url("/project/" .. project_id .. "/session", opts)
+end
+
 function M.prompt_url(session_id, opts)
   return url("/api/session/" .. session_id .. "/prompt", opts)
 end
 
 function M.messages_url(session_id, opts)
   return url("/session/" .. session_id .. "/message", opts)
+end
+
+function M.project_messages_url(project_id, session_id, opts)
+  return url("/project/" .. project_id .. "/session/" .. session_id .. "/message", opts)
 end
 
 function M.run(args, cb)
@@ -49,11 +61,30 @@ local function decode_json(text)
   return nil
 end
 
+local function split_body_status(stdout)
+  stdout = stdout or ""
+  local body, status = stdout:match("^(.*)\n(%d%d%d)$")
+  if status then
+    return body, tonumber(status)
+  end
+  return stdout, nil
+end
+
+local function with_status(args)
+  local copy = vim.deepcopy(args)
+  table.insert(copy, "-w")
+  table.insert(copy, "\n%{http_code}")
+  return copy
+end
+
 local function get_json(target_url, cb)
-  M.run({ "curl", "-sS", target_url }, function(result)
-    local ok = result.code == 0
+  M.run(with_status({ "curl", "-sS", target_url }), function(result)
+    local body, status = split_body_status(result.stdout)
+    result.body = body
+    result.status = status
+    local ok = result.code == 0 and status and status >= 200 and status < 300
     if cb then
-      cb(ok, decode_json(result.stdout), result)
+      cb(ok, decode_json(body), result)
     end
   end)
 end
@@ -71,10 +102,13 @@ local function post_json(target_url, payload, cb)
     vim.json.encode(payload),
   }
 
-  M.run(args, function(result)
-    local ok = result.code == 0
+  M.run(with_status(args), function(result)
+    local body, status = split_body_status(result.stdout)
+    result.body = body
+    result.status = status
+    local ok = result.code == 0 and status and status >= 200 and status < 300
     if cb then
-      cb(ok, decode_json(result.stdout), result)
+      cb(ok, decode_json(body), result)
     end
   end)
 end
@@ -148,6 +182,33 @@ function M.create_session(directory, opts, cb)
   end)
 end
 
+function M.get_project_id(directory, opts, cb)
+  opts = opts or {}
+  get_json(M.project_url(opts), function(ok, data, result)
+    if not ok then
+      cb(false, nil, data, result)
+      return
+    end
+
+    local projects = data and (data.data or data)
+    if type(projects) ~= "table" then
+      cb(false, nil, data, result)
+      return
+    end
+
+    local first_id = nil
+    for _, project in ipairs(projects) do
+      first_id = first_id or project.id
+      if project.worktree == directory or project.path == directory or project.directory == directory then
+        cb(project.id ~= nil, project.id, data, result)
+        return
+      end
+    end
+
+    cb(first_id ~= nil, first_id, data, result)
+  end)
+end
+
 function M.send_prompt(session_id, text, opts, cb)
   opts = opts or {}
   local payload = { prompt = { text = text } }
@@ -156,10 +217,10 @@ function M.send_prompt(session_id, text, opts, cb)
   end
 
   post_json(M.prompt_url(session_id, opts), payload, function(ok, data, result)
-    if not data and result and result.stdout then
-      data = decode_json(result.stdout:match("({.*})"))
+    if not data and result and result.body then
+      data = decode_json(result.body:match("({.*})"))
     end
-    cb(ok, data, result, M.extract_text(data, result and result.stdout or ""))
+    cb(ok, data, result, M.extract_text(data, result and (result.body or result.stdout) or ""))
   end)
 end
 
@@ -168,12 +229,33 @@ function M.get_messages(session_id, opts, cb)
   get_json(M.messages_url(session_id, opts), cb)
 end
 
+function M.get_project_messages(project_id, session_id, opts, cb)
+  opts = opts or {}
+  get_json(M.project_messages_url(project_id, session_id, opts), cb)
+end
+
+local function get_any_messages(session_id, opts, cb)
+  M.get_messages(session_id, opts, function(ok, data, result)
+    if ok then
+      cb(true, data, result)
+      return
+    end
+
+    if opts.project_id then
+      M.get_project_messages(opts.project_id, session_id, opts, cb)
+      return
+    end
+
+    cb(false, data, result)
+  end)
+end
+
 function M.wait_for_assistant(session_id, opts, cb)
   opts = opts or {}
   local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().startup_timeout_ms) * 1000000)
 
   local function poll()
-    M.get_messages(session_id, opts, function(ok, data, result)
+    get_any_messages(session_id, opts, function(ok, data, result)
       local text = ok and M.extract_assistant_text(data) or ""
       if text ~= "" then
         cb(true, text, data, result)
