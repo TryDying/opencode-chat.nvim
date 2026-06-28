@@ -119,6 +119,10 @@ function M.cancel(cb)
 
   if state.session_id and state.api_style == "session" then
     return client.abort_session(state.session_id, { host = config.get().host, port = state.port }, function(ok, _data, result)
+      if ok then
+        state.session_id = nil
+        state.api_style = nil
+      end
       if cb then
         cb(ok, ok and "cancelled" or client.format_error(result, "cancel failed"))
       end

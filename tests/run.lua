@@ -119,7 +119,7 @@ end, 5000), "submit should create session and send prompt to fake headless serve
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
 assert_eq(session_payload.agent, "build", "session create should include configured opencode agent")
 assert_eq(session_payload.model.providerID, "deepseek", "session create model should include providerID")
-assert_eq(session_payload.model.id, "deepseek-v4-flash", "session create model should include model id")
+assert_eq(session_payload.model.modelID, "deepseek-v4-flash", "session create model should include modelID")
 assert_eq(session_payload.model.variant, "low", "session create model should include variant")
 
 local lines = vim.fn.readfile(prompt_file)
@@ -158,6 +158,7 @@ assert_true(wait_for(function()
   return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Cancelled" and messages[#messages].text == "Cancelled by opencode."
 end, 2000), "cancel should abort backend and render cancellation")
 assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-abort.jsonl") == 1, "cancel should call opencode session abort endpoint")
+assert_eq(server.state().session_id, nil, "cancel should discard aborted session so the next request creates a fresh session")
 local cancelled_count = 0
 for _, message in ipairs(ui.state().messages) do
   if message.role == "Cancelled" then
@@ -176,6 +177,7 @@ assert_true(wait_for(function()
   local messages = ui.state().messages
   return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("a %- b") ~= nil
 end, 5000), "edit should render backend edit summary")
+assert_true(#vim.fn.readfile(session_file) >= 2, "request after cancel should create a new session")
 local updated = table.concat(vim.fn.readfile(file), "\n")
 assert_true(updated:match("return a %- b") ~= nil, "backend edit should update sandbox file")
 

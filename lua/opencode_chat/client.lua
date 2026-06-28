@@ -162,7 +162,7 @@ local function model_object(model)
   if not provider_id or not model_id then
     return nil
   end
-  return { providerID = provider_id, id = model_id }
+  return { providerID = provider_id, modelID = model_id }
 end
 
 local function session_model(model, variant)

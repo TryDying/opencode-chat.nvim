@@ -34,6 +34,7 @@ end, { desc = "Append selection to opencode" })
 ```
 
 这些配置会在创建 opencode session 时发送；普通消息请求只发送 prompt parts。
+内部会把 `provider/model` 字符串转换成 `{ providerID, modelID, variant }`。
 
 默认会绑定：
 

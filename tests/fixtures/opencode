@@ -44,6 +44,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         data = json.loads(body) if body else {}
 
         if self.path == "/session":
+            ABORTED = False
             self._record_session(data)
             self._json({"id": SESSION_ID, "title": data.get("title")})
             return
