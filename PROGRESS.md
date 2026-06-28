@@ -79,3 +79,10 @@
 - 方案：取消改为调用 `POST /session/:sessionID/abort`，UI 在 abort 成功后显示 `Cancelled by opencode.`；`agent/model/variant` 改为随 `POST /session` 发送，普通 message 只发送 prompt parts。
 - 预防：测试必须断言 abort endpoint 被调用、单次取消只渲染一条取消状态、session create payload 含配置且 message payload 不重复配置。
 - commitID：86a3c94
+
+## 2026-06-28：abort 后不能复用已取消 session
+
+- 问题：`POST /session/:sessionID/abort` 后继续复用同一 session，后续请求会立即得到 `MessageAbortedError`；同时 session model 字段使用 `id` 未被真实后端识别。
+- 方案：abort 成功后清空当前 `session_id/api_style`，下一次请求重新创建 session；session model 字段改为 `{ providerID, modelID, variant }`。
+- 预防：测试必须断言 cancel 后下一次请求会新建 session，并验证 session create payload 使用 `modelID`。
+- commitID：6287582
