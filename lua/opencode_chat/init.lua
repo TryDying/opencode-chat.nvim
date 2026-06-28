@@ -5,6 +5,10 @@ local context = require("opencode_chat.context")
 local commands = require("opencode_chat.commands")
 
 local M = {}
+local request = {
+  busy = false,
+  id = 0,
+}
 
 local function notify_error(message)
   vim.schedule(function()
@@ -49,6 +53,10 @@ function M.show()
 end
 
 function M.submit()
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
   local text = ui.input_text()
   if text == "" then
     notify_error("opencode prompt is empty")
@@ -64,12 +72,24 @@ function M.ask(text)
     return
   end
 
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
+
   local prompt, project_root = build_prompt(text)
+  request.busy = true
+  request.id = request.id + 1
+  local request_id = request.id
   ui.add_message("User", prompt)
   ui.add_message("Assistant", "Thinking...")
 
   server.send(prompt, project_root, function(ok, reply, err)
     vim.schedule(function()
+      if request_id ~= request.id then
+        return
+      end
+      request.busy = false
       if ok then
         ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
       else
@@ -77,6 +97,18 @@ function M.ask(text)
       end
     end)
   end)
+end
+
+function M.cancel()
+  if not request.busy then
+    notify_error("no active opencode request")
+    return
+  end
+  request.id = request.id + 1
+  request.busy = false
+  server.cancel()
+  ui.replace_last_if("Assistant", "Thinking...", "Cancelled", "Request cancelled.")
+  ui.replace_last_if("Assistant", "Editing...", "Cancelled", "Request cancelled.")
 end
 
 function M.append_file()
@@ -90,6 +122,10 @@ function M.append_selection()
 end
 
 function M.edit(instruction)
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
   instruction = instruction ~= "" and instruction or "Modify the current file as requested."
   local item, project_root = context.file_item(0)
   local prompt = table.concat({
@@ -106,8 +142,15 @@ function M.edit(instruction)
 
   ui.add_message("User", "/edit " .. instruction)
   ui.add_message("Assistant", "Editing...")
+  request.busy = true
+  request.id = request.id + 1
+  local request_id = request.id
   server.send(prompt, project_root, function(ok, reply, err)
     vim.schedule(function()
+      if request_id ~= request.id then
+        return
+      end
+      request.busy = false
       if not ok then
         ui.replace_last_if("Assistant", "Editing...", "Error", tostring(err or "opencode edit failed"))
         return
@@ -127,10 +170,13 @@ function M.new_session()
 end
 
 function M.stop()
+  request.busy = false
+  request.id = request.id + 1
   server.stop()
   ui.close()
 end
 
 M._build_prompt = build_prompt
+M._request = request
 
 return M

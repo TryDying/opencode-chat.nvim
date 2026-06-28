@@ -4,6 +4,7 @@ local root = require("opencode_chat.root")
 local client = require("opencode_chat.client")
 
 local M = {}
+local active = nil
 
 local state = {
   root = nil,
@@ -80,7 +81,8 @@ function M.send(text, startpath, cb)
       cb(false, nil, err)
       return
     end
-    client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model, agent = cfg.agent, variant = cfg.variant, api_style = current.api_style }, function(sent, data, result, reply)
+    active = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model, agent = cfg.agent, variant = cfg.variant, api_style = current.api_style }, function(sent, data, result, reply)
+      active = nil
       if not sent then
         cb(false, nil, client.format_error(result, "prompt failed"))
         return
@@ -91,7 +93,8 @@ function M.send(text, startpath, cb)
         return
       end
 
-      client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
+      active = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
+        active = nil
         if found then
           cb(true, assistant_text, history)
           return
@@ -102,7 +105,21 @@ function M.send(text, startpath, cb)
   end)
 end
 
+function M.cancel()
+  if active then
+    if active.cancel then
+      active.cancel()
+    elseif active.kill then
+      pcall(function()
+        active:kill(15)
+      end)
+    end
+    active = nil
+  end
+end
+
 function M.stop()
+  M.cancel()
   if job_running(state.job_id) then
     vim.fn.jobstop(state.job_id)
   end

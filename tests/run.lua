@@ -69,6 +69,7 @@ opencode.setup({
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
 assert_true(vim.fn.exists(":OpencodeAsk") == 2, "ask command should be registered")
 assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registered")
+assert_true(vim.fn.exists(":OpencodeCancel") == 2, "cancel command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
 assert_true(vim.fn.maparg("<M-->", "v") ~= "", "visual <M--> should be mapped")
 
@@ -129,6 +130,26 @@ assert_true(wait_for(function()
   return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("fake reply") ~= nil
 end, 3000), "native UI should render assistant reply")
 assert_eq(ui.input_text(), "", "input buffer should be cleared after submit")
+
+local msg_state = ui.state()
+local last_line = vim.api.nvim_buf_line_count(msg_state.message_buf)
+assert_eq(vim.api.nvim_win_get_cursor(msg_state.message_win)[1], last_line, "message pane should auto-scroll to the bottom")
+ui.focus_messages()
+assert_eq(vim.api.nvim_get_current_win(), msg_state.message_win, "message pane should be focusable by keyboard")
+ui.focus_input()
+assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
+
+opencode.ask("slow response")
+assert_true(wait_for(function()
+  return opencode._request.busy == true
+end, 1000), "slow request should enter busy state")
+opencode.ask("second request while busy")
+assert_true(opencode._request.busy, "second request should not start while busy")
+opencode.cancel()
+assert_true(wait_for(function()
+  local messages = ui.state().messages
+  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Cancelled"
+end, 1000), "cancel should clear busy state and render cancellation")
 
 local first_job = server.state().job_id
 opencode.toggle()

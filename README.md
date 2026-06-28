@@ -7,6 +7,8 @@
 - `:OpencodeToggle` 打开/隐藏原生 Chat UI。
 - `:OpencodeAsk [prompt]` 发送问题；不带参数时打开输入区。
 - Chat 输入区按 `<C-s>` 提交。
+- Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
+- Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 取消当前请求。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。

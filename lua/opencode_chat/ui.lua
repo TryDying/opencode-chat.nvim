@@ -37,6 +37,15 @@ local function ensure_buffers()
     vim.bo[state.message_buf].bufhidden = "hide"
     vim.bo[state.message_buf].filetype = "markdown"
     vim.bo[state.message_buf].modifiable = false
+    vim.keymap.set("n", "<Tab>", function()
+      require("opencode_chat.ui").focus_input()
+    end, { buffer = state.message_buf, silent = true, desc = "Focus opencode input" })
+    vim.keymap.set("n", "q", function()
+      require("opencode_chat").toggle()
+    end, { buffer = state.message_buf, silent = true, desc = "Toggle opencode chat" })
+    vim.keymap.set("n", "<C-c>", function()
+      require("opencode_chat").cancel()
+    end, { buffer = state.message_buf, silent = true, desc = "Cancel opencode request" })
   end
   if not valid_buf(state.input_buf) then
     state.input_buf = vim.api.nvim_create_buf(false, true)
@@ -49,6 +58,18 @@ local function ensure_buffers()
     vim.keymap.set("i", "<C-s>", function()
       require("opencode_chat").submit()
     end, { buffer = state.input_buf, silent = true, desc = "Submit opencode prompt" })
+    vim.keymap.set("n", "<Tab>", function()
+      require("opencode_chat.ui").focus_messages()
+    end, { buffer = state.input_buf, silent = true, desc = "Focus opencode messages" })
+    vim.keymap.set("i", "<Tab>", function()
+      require("opencode_chat.ui").focus_messages()
+    end, { buffer = state.input_buf, silent = true, desc = "Focus opencode messages" })
+    vim.keymap.set("n", "<C-c>", function()
+      require("opencode_chat").cancel()
+    end, { buffer = state.input_buf, silent = true, desc = "Cancel opencode request" })
+    vim.keymap.set("i", "<C-c>", function()
+      require("opencode_chat").cancel()
+    end, { buffer = state.input_buf, silent = true, desc = "Cancel opencode request" })
   end
 end
 
@@ -117,6 +138,14 @@ function M.render()
   vim.bo[state.message_buf].modifiable = true
   vim.api.nvim_buf_set_lines(state.message_buf, 0, -1, false, lines)
   vim.bo[state.message_buf].modifiable = false
+
+  if valid_win(state.message_win) then
+    local last = math.max(vim.api.nvim_buf_line_count(state.message_buf), 1)
+    pcall(vim.api.nvim_win_set_cursor, state.message_win, { last, 0 })
+    pcall(vim.api.nvim_win_call, state.message_win, function()
+      vim.cmd("normal! zb")
+    end)
+  end
 end
 
 function M.show()
@@ -125,6 +154,19 @@ function M.show()
   vim.api.nvim_set_current_win(state.input_win)
   vim.cmd("startinsert")
   return state
+end
+
+function M.focus_messages()
+  open_windows()
+  M.render()
+  vim.api.nvim_set_current_win(state.message_win)
+end
+
+function M.focus_input()
+  open_windows()
+  M.render()
+  vim.api.nvim_set_current_win(state.input_win)
+  vim.cmd("startinsert")
 end
 
 function M.hide()

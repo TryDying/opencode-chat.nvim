@@ -6,6 +6,7 @@ import os
 import re
 import signal
 import sys
+import time
 
 
 SESSION_ID = "test-session"
@@ -52,6 +53,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == f"/session/{SESSION_ID}/message":
             text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
             self._record_prompt(data)
+            if "slow response" in text:
+                time.sleep(5)
             user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
             if "make add subtract" in text or "改成减法" in text:
                 target = os.path.join(os.getcwd(), "src", "example.lua")

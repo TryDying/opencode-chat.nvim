@@ -43,8 +43,7 @@ end
 
 function M.run(args, cb)
   if vim.system then
-    vim.system(args, { text = true }, cb)
-    return
+    return vim.system(args, { text = true }, cb)
   end
 
   local result = vim.fn.system(args)
@@ -52,6 +51,7 @@ function M.run(args, cb)
   if cb then
     cb({ code = code, stdout = result, stderr = code == 0 and "" or result })
   end
+  return nil
 end
 
 local function decode_json(text)
@@ -109,13 +109,13 @@ function M.format_error(result, fallback)
 end
 
 local function get_json(target_url, cb)
-  M.run(with_status({ "curl", "-sS", target_url }), function(result)
+  return M.run(with_status({ "curl", "-sS", target_url }), function(result)
     finish(result, cb)
   end)
 end
 
 local function post_json(target_url, payload, cb)
-  M.run(with_status({
+  return M.run(with_status({
     "curl",
     "-sS",
     "-X",
@@ -208,7 +208,7 @@ end
 
 function M.create_session(directory, opts, cb)
   opts = opts or {}
-  post_json(M.session_url(opts), { title = vim.fn.fnamemodify(directory, ":t") }, function(ok, data, result)
+  return post_json(M.session_url(opts), { title = vim.fn.fnamemodify(directory, ":t") }, function(ok, data, result)
     local id = data and ((data.data and data.data.id) or data.id)
     if ok and id then
       cb(true, id, data, result, "session")
@@ -245,17 +245,16 @@ function M.send_message(session_id, text, opts, cb)
     if opts.variant then
       legacy_payload.variant = opts.variant
     end
-    post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
+    return post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
       cb(legacy_ok, legacy_data, legacy_result, M.extract_message_text(legacy_data), "legacy")
     end)
   end
 
   if opts.api_style == "legacy" then
-    send_legacy()
-    return
+    return send_legacy()
   end
 
-  post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
+  return post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
     if ok then
       cb(true, data, result, M.extract_message_text(data), "session")
       return
@@ -266,7 +265,7 @@ function M.send_message(session_id, text, opts, cb)
       return
     end
 
-    send_legacy()
+    return send_legacy()
   end)
 end
 
@@ -283,9 +282,28 @@ end
 function M.wait_for_assistant(session_id, opts, cb)
   opts = opts or {}
   local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().response_timeout_ms) * 1000000)
+  local token = { cancelled = false, handle = nil }
+
+  function token.cancel()
+    token.cancelled = true
+    if token.handle and token.handle.kill then
+      pcall(function()
+        token.handle:kill(15)
+      end)
+    end
+  end
 
   local function poll()
-    M.get_messages(session_id, opts, function(ok, data, result)
+    if token.cancelled then
+      cb(false, "", nil, { body = "cancelled" })
+      return
+    end
+
+    token.handle = M.get_messages(session_id, opts, function(ok, data, result)
+      if token.cancelled then
+        cb(false, "", nil, { body = "cancelled" })
+        return
+      end
       local text = ok and M.extract_assistant_text(data) or ""
       if text ~= "" then
         cb(true, text, data, result)
@@ -293,7 +311,11 @@ function M.wait_for_assistant(session_id, opts, cb)
       end
 
       if not ok and opts.project_id then
-        M.get_project_messages(opts.project_id, session_id, opts, function(project_ok, project_data, project_result)
+        token.handle = M.get_project_messages(opts.project_id, session_id, opts, function(project_ok, project_data, project_result)
+          if token.cancelled then
+            cb(false, "", nil, { body = "cancelled" })
+            return
+          end
           local project_text = project_ok and M.extract_assistant_text(project_data) or ""
           if project_text ~= "" then
             cb(true, project_text, project_data, project_result)
@@ -317,6 +339,7 @@ function M.wait_for_assistant(session_id, opts, cb)
   end
 
   poll()
+  return token
 end
 
 function M.wait_until_ready(opts, cb)

@@ -66,6 +66,7 @@ These routing rules are mandatory for this repository.
 ## Validation focus
 
 - Manually verify that input `<C-s>` or `:OpencodeAsk` creates a session, sends a prompt, and renders the assistant response in the native UI.
+- Manually verify message/input pane keyboard switching with `<Tab>`, auto-scroll to latest messages, and cancellation with `<C-c>` or `:OpencodeCancel`.
 - Manually verify `:OpencodeEdit` operates on sandbox/test files unless intentionally targeting a real file; opencode backend is expected to perform edits.
 - Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
 - Manually verify that reversed Visual selections still produce ascending line ranges.
