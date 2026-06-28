@@ -34,7 +34,6 @@ local context = require("opencode_chat.context")
 local opencode = require("opencode_chat")
 local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
-local diff = require("opencode_chat.diff")
 
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp .. "/.git", "p")
@@ -62,12 +61,14 @@ opencode.setup({
   port = fake_port,
   startup_timeout_ms = 3000,
   response_timeout_ms = 3000,
+  agent = "build",
+  model = "deepseek/deepseek-v4-flash",
+  variant = "low",
 })
 
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
 assert_true(vim.fn.exists(":OpencodeAsk") == 2, "ask command should be registered")
 assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registered")
-assert_true(vim.fn.exists(":OpencodeApply") == 2, "apply command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
 assert_true(vim.fn.maparg("<M-->", "v") ~= "", "visual <M--> should be mapped")
 
@@ -114,6 +115,9 @@ end, 5000), "submit should create session and send prompt to fake headless serve
 local lines = vim.fn.readfile(prompt_file)
 local payload = vim.json.decode(lines[#lines])
 local sent_text = payload.parts[1].text
+assert_eq(payload.agent, "build", "payload should include configured opencode agent")
+assert_eq(payload.model, "deepseek/deepseek-v4-flash", "payload should include configured model")
+assert_eq(payload.variant, "low", "payload should include configured variant")
 assert_true(sent_text:match("@src/example.lua") ~= nil, "prompt should include queued context label")
 assert_true(sent_text:match("function M.add") ~= nil, "prompt should include queued context code")
 assert_true(sent_text:match("这是啥") ~= nil, "prompt should include input text")
@@ -131,11 +135,11 @@ assert_true(server.state().job_id == first_job, "UI toggle should not restart he
 
 opencode.edit("make add subtract instead")
 assert_true(wait_for(function()
-  return diff.state().patch ~= nil and diff.state().patch:match("return a %- b") ~= nil
-end, 5000), "edit should create a diff preview")
-opencode.apply()
+  local messages = ui.state().messages
+  return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("a %- b") ~= nil
+end, 5000), "edit should render backend edit summary")
 local updated = table.concat(vim.fn.readfile(file), "\n")
-assert_true(updated:match("return a %- b") ~= nil, "apply should update sandbox file")
+assert_true(updated:match("return a %- b") ~= nil, "backend edit should update sandbox file")
 
 opencode.stop()
 vim.fn.delete(tmp, "rf")

@@ -196,6 +196,12 @@ function M.send_message(session_id, text, opts, cb)
   if opts.model then
     payload.model = opts.model
   end
+  if opts.agent then
+    payload.agent = opts.agent
+  end
+  if opts.variant then
+    payload.variant = opts.variant
+  end
   post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
     if ok then
       cb(true, data, result, M.extract_message_text(data), "session")
@@ -205,6 +211,12 @@ function M.send_message(session_id, text, opts, cb)
     local legacy_payload = { prompt = { text = text } }
     if opts.model then
       legacy_payload.model = opts.model
+    end
+    if opts.agent then
+      legacy_payload.agent = opts.agent
+    end
+    if opts.variant then
+      legacy_payload.variant = opts.variant
     end
     post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
       cb(legacy_ok, legacy_data, legacy_result, M.extract_message_text(legacy_data), "legacy")

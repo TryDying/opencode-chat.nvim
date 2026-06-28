@@ -3,7 +3,6 @@ local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
 local context = require("opencode_chat.context")
 local commands = require("opencode_chat.commands")
-local diff = require("opencode_chat.diff")
 
 local M = {}
 
@@ -91,11 +90,12 @@ function M.append_selection()
 end
 
 function M.edit(instruction)
-  instruction = instruction ~= "" and instruction or "Modify the current file. Return only a unified diff."
+  instruction = instruction ~= "" and instruction or "Modify the current file as requested."
   local item, project_root = context.file_item(0)
   local prompt = table.concat({
-    "You are editing a file. Return only a unified diff patch for the file below.",
-    "Do not include Markdown fences or explanations.",
+    "You are editing a file in the current project.",
+    "Use the configured opencode agent to make the change directly when appropriate.",
+    "After editing, summarize what changed.",
     "File: " .. item.relative,
     "Instruction: " .. instruction,
     "Current content:",
@@ -105,30 +105,16 @@ function M.edit(instruction)
   }, "\n")
 
   ui.add_message("User", "/edit " .. instruction)
-  ui.add_message("Assistant", "Generating diff...")
+  ui.add_message("Assistant", "Editing...")
   server.send(prompt, project_root, function(ok, reply, err)
     vim.schedule(function()
       if not ok then
-        ui.replace_last_if("Assistant", "Generating diff...", "Error", tostring(err or "opencode edit failed"))
+        ui.replace_last_if("Assistant", "Editing...", "Error", tostring(err or "opencode edit failed"))
         return
       end
-      local patch = reply:gsub("^```diff%s*", ""):gsub("```%s*$", "")
-      local preview_ok, preview_err = pcall(diff.preview, item.path, patch)
-      if preview_ok then
-        ui.replace_last_if("Assistant", "Generating diff...", "Assistant", "Diff preview ready. Use :OpencodeApply or :OpencodeReject.")
-      else
-        ui.replace_last_if("Assistant", "Generating diff...", "Error", tostring(preview_err))
-      end
+      ui.replace_last_if("Assistant", "Editing...", "Assistant", reply ~= "" and reply or "(edit completed)")
     end)
   end)
-end
-
-function M.apply()
-  diff.apply()
-end
-
-function M.reject()
-  diff.reject()
 end
 
 function M.new_session()

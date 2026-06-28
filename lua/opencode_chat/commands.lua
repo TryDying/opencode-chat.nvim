@@ -21,14 +21,6 @@ function M.setup(api)
     api.edit(opts.args)
   end, { nargs = "*", force = true })
 
-  vim.api.nvim_create_user_command("OpencodeApply", function()
-    api.apply()
-  end, { force = true })
-
-  vim.api.nvim_create_user_command("OpencodeReject", function()
-    api.reject()
-  end, { force = true })
-
   vim.api.nvim_create_user_command("OpencodeNewSession", function()
     api.new_session()
   end, { force = true })

@@ -53,8 +53,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
             self._record_prompt(data)
             user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
-            if "Return only a unified diff" in text:
-                reply_text = "--- a/src/example.lua\n+++ b/src/example.lua\n@@ -1,7 +1,7 @@\n local M = {}\n \n function M.add(a, b)\n-  return a + b\n+  return a - b\n end\n \n function M.mul(a, b)"
+            if "make add subtract" in text or "改成减法" in text:
+                target = os.path.join(os.getcwd(), "src", "example.lua")
+                if os.path.exists(target):
+                    with open(target, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    content = content.replace("return a + b", "return a - b")
+                    with open(target, "w", encoding="utf-8") as f:
+                        f.write(content)
+                reply_text = "已改好：src/example.lua 中 M.add(a, b) 现在返回 a - b。"
             else:
                 reply_text = "fake reply: " + text
             assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", reply_text)]}

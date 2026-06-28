@@ -54,7 +54,6 @@ These routing rules are mandatory for this repository.
 - `lua/opencode_chat/server.lua`: headless opencode server job and session lifecycle.
 - `lua/opencode_chat/client.lua`: HTTP wrapper for session creation and prompt submission.
 - `lua/opencode_chat/ui.lua`: native floating message/input buffers, rendering, and queued context display.
-- `lua/opencode_chat/diff.lua`: unified diff preview plus apply/reject for edit MVP.
 - `lua/opencode_chat/context.lua`: current-file and Visual-selection reference generation.
 - `lua/opencode_chat/commands.lua`: command registration such as `:OpencodeToggle`.
 - `lua/opencode_chat/init.lua`: public setup/API entrypoint.
@@ -67,7 +66,7 @@ These routing rules are mandatory for this repository.
 ## Validation focus
 
 - Manually verify that input `<C-s>` or `:OpencodeAsk` creates a session, sends a prompt, and renders the assistant response in the native UI.
-- Manually verify `:OpencodeEdit`, `:OpencodeApply`, and `:OpencodeReject` only operate on sandbox/test files unless intentionally targeting a real file.
+- Manually verify `:OpencodeEdit` operates on sandbox/test files unless intentionally targeting a real file; opencode backend is expected to perform edits.
 - Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
 - Manually verify that reversed Visual selections still produce ascending line ranges.
 

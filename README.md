@@ -1,6 +1,6 @@
 # opencode-chat.nvim
 
-轻量 Neovim 插件：用 Neovim 原生 floating buffers 实现 Chat UI，并通过 `opencode serve` 的本地 HTTP API 创建 session、发送 prompt、预览并应用 diff。
+轻量 Neovim 插件：用 Neovim 原生 floating buffers 实现 Chat UI，并通过 `opencode serve` 的本地 HTTP API 创建 session、发送 prompt，并让 opencode agent 执行文件修改。
 
 ## 功能
 
@@ -9,15 +9,18 @@
 - Chat 输入区按 `<C-s>` 提交。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
-- `:OpencodeEdit [instruction]` 请求返回 unified diff 并打开预览。
-- `:OpencodeApply` / `:OpencodeReject` 应用或拒绝 diff 预览。
+- `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
 - `:OpencodeNewSession` 停止当前 server 并创建新 session。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
 ## 配置示例
 
 ```lua
-require("opencode_chat").setup()
+require("opencode_chat").setup({
+  agent = "build",
+  model = "deepseek/deepseek-v4-flash",
+  variant = "low",
+})
 
 vim.keymap.set("n", "<M-->", function()
   require("opencode_chat").toggle()

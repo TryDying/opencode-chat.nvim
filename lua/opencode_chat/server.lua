@@ -80,7 +80,7 @@ function M.send(text, startpath, cb)
       cb(false, nil, err)
       return
     end
-    client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model }, function(sent, data, result, reply)
+    client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = cfg.model, agent = cfg.agent, variant = cfg.variant }, function(sent, data, result, reply)
       if not sent then
         cb(false, nil, result and (result.stderr or result.body or result.stdout) or "prompt failed")
         return
