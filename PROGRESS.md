@@ -58,3 +58,10 @@
 - 方案：记录 session 的 API style，消息发送只使用匹配的 API；HTTP 错误统一格式化为 `HTTP <status>: <body>`，避免空错误。
 - 预防：测试必须覆盖 HTTP body 不被空 `stderr` 吞掉，并避免跨 API style fallback 掩盖真实 schema/请求错误。
 - commitID：16de2e7
+
+## 2026-06-28：新版 message API 的 model 字段是对象
+
+- 问题：`/session/:sessionID/message` 要求 `model` 是对象，直接发送配置字符串 `deepseek/deepseek-v4-flash` 会触发 HTTP 400：`Expected object | null`。
+- 方案：配置仍允许 `provider/model` 字符串，发送新版 message API 时自动转换为 `{ providerID, modelID }`；旧 API fallback 仍保留字符串格式。
+- 预防：测试需断言新版 payload 的 `model.providerID` 和 `model.modelID`，避免把配置格式与 HTTP schema 混同。
+- commitID：da48cde
