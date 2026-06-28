@@ -51,3 +51,10 @@
 - 方案：`OpencodeEdit` 改为向配置的 opencode agent 发送编辑请求并渲染 assistant 总结；测试模拟后端直接修改 sandbox 文件，并断言 `agent/model/variant` payload。
 - 预防：集成已有 agent 后端时，优先尊重后端工作流；只有后端不负责写入时，才在插件层设计本地 diff/apply。
 - commitID：44fcb84
+
+## 2026-06-28：同一个 session 不能混用新旧 message API
+
+- 问题：用新版 `/session` 创建 session 后，`/session/:id/message` 一旦失败，客户端仍盲目 fallback 到旧 `/api/session/:id/prompt`，同时空 `stderr` 会吞掉 HTTP body，导致 UI 只显示误导性 Error。
+- 方案：记录 session 的 API style，消息发送只使用匹配的 API；HTTP 错误统一格式化为 `HTTP <status>: <body>`，避免空错误。
+- 预防：测试必须覆盖 HTTP body 不被空 `stderr` 吞掉，并避免跨 API style fallback 掩盖真实 schema/请求错误。
+- commitID：16de2e7
