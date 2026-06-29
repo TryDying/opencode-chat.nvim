@@ -49,6 +49,13 @@ local function set_buf_options(buf, filetype)
   vim.bo[buf].filetype = filetype or ""
 end
 
+local function leave_visual_mode()
+  local mode = vim.api.nvim_get_mode().mode
+  if mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19" then
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+  end
+end
+
 local function ensure_buffers()
   if not valid_buf(state.message_buf) then
     state.message_buf = vim.api.nvim_create_buf(false, true)
@@ -207,6 +214,9 @@ end
 
 function M.show(opts)
   opts = opts or {}
+  if opts.focus ~= "none" then
+    leave_visual_mode()
+  end
   open_windows()
   M.render()
   if opts.focus == "messages" then
@@ -225,6 +235,7 @@ function M.set_status(text)
 end
 
 function M.focus_messages()
+  leave_visual_mode()
   open_windows()
   M.render()
   vim.api.nvim_set_current_win(state.message_win)
@@ -232,6 +243,7 @@ function M.focus_messages()
 end
 
 function M.focus_input()
+  leave_visual_mode()
   open_windows()
   M.render()
   vim.api.nvim_set_current_win(state.input_win)
