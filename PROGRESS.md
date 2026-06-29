@@ -128,3 +128,10 @@
 - 方案：toggle 改为面板隐藏时打开、面板可见但失焦时聚焦输入区、焦点在 Chat 内时隐藏；panel window 显式清空 winbar/statusline，并增加 `ui.height` 与可选 `ui.message_height`。
 - 预防：测试必须断言 pane winbar 为空、toggle 失焦后聚焦 input、`ui.width/ui.height/ui.message_height` 配置存在且稳定。
 - commitID：3c13fb5
+
+## 2026-06-29：Visual 追加上下文后必须退出 Visual 模式
+
+- 问题：Visual 模式触发 `<M-->` 追加选区并聚焦 Chat 输入区后，Neovim 仍停留在 Visual 状态，用户需要手动按 `<Esc>` 才能继续输入对话。
+- 方案：在 Chat `show`、`focus_input`、`focus_messages` 等聚焦入口统一检测 Visual/Select 模式并发送 `<Esc>`，再切换到目标 pane。
+- 预防：测试必须覆盖 active visual selection 追加上下文后，焦点进入 input pane 且当前模式不再是 Visual。
+- commitID：2a62bc7
