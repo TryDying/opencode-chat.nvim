@@ -93,3 +93,10 @@
 - 方案：session 创建使用 `{ providerID, id, variant }`，message 请求使用 `{ providerID, modelID }` 并带顶层 `agent` / `variant`。
 - 预防：fake server 必须在 message 缺少 `agent/model/variant` 时返回空数组，测试必须覆盖这一路径，避免再次把配置层级误判为只属于 session。
 - commitID：8211d99
+
+## 2026-06-29：模型与 variant 选择需要按 provider 建模
+
+- 问题：把可选模型写成扁平 `provider/model:variant` 会把 variant 误绑定到模型展示维度，无法表达不同 provider 的 variant 集合，也不利于后续手动切换 variant。
+- 方案：配置改为 provider 分组白名单：provider 定义 `variants`，model 定义 `default_variant`；新增 session/model/variant picker，新建 session 只创建后端 session 而不重启 server。
+- 预防：测试必须覆盖 provider 分组 model picker、当前 provider variant picker、切模型重置默认 variant、手动切 variant 后 payload 生效，以及新建 session 不重启 server。
+- commitID：96b1551
