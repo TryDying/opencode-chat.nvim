@@ -82,7 +82,14 @@
 
 ## 2026-06-28：abort 后不能复用已取消 session
 
-- 问题：`POST /session/:sessionID/abort` 后继续复用同一 session，后续请求会立即得到 `MessageAbortedError`；同时 session model 字段使用 `id` 未被真实后端识别。
-- 方案：abort 成功后清空当前 `session_id/api_style`，下一次请求重新创建 session；session model 字段改为 `{ providerID, modelID, variant }`。
-- 预防：测试必须断言 cancel 后下一次请求会新建 session，并验证 session create payload 使用 `modelID`。
+- 问题：`POST /session/:sessionID/abort` 后继续复用同一 session，后续请求会立即得到 `MessageAbortedError`；当时对 model 字段层级仍未完全确认。
+- 方案：abort 成功后清空当前 `session_id/api_style`，下一次请求重新创建 session。
+- 预防：测试必须断言 cancel 后下一次请求会新建 session；model 字段 schema 需以真实 `/doc` 为准。
 - commitID：6287582
+
+## 2026-06-28：session 与 message 的 model schema 不同
+
+- 问题：真实 `/doc` 显示 session 创建和 message 请求都可携带模型配置，但字段不同；只在 session 创建传配置会导致真实 message 返回空历史 `HTTP 200: []`。
+- 方案：session 创建使用 `{ providerID, id, variant }`，message 请求使用 `{ providerID, modelID }` 并带顶层 `agent` / `variant`。
+- 预防：fake server 必须在 message 缺少 `agent/model/variant` 时返回空数组，测试必须覆盖这一路径，避免再次把配置层级误判为只属于 session。
+- commitID：8211d99
