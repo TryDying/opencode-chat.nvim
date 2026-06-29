@@ -121,3 +121,10 @@
 - 方案：移除主 UI toolbar，只保留 message/input/status；全局快捷键改为用户通过 `keymaps` 显式配置，variant 推荐 `<leader>Xt`，并新增当前 session 重命名入口。
 - 预防：测试必须断言 toolbar window 不存在、status 在 input 下方、旧 `<leader>Xv` 不再注册、新 `<leader>Xt` / `<leader>Xr` 可配置，并覆盖 `PATCH /session/:id` 重命名。
 - commitID：166e3cc
+
+## 2026-06-29：Toggle 应优先恢复焦点而不是直接隐藏
+
+- 问题：右侧 panel 失焦后再次触发 toggle 会直接隐藏，用户想回到 Chat 输入区时反而要重新打开；同时 pane 继承 winbar 会在首行上方留下空白行，消息区可用高度也缺少明确配置。
+- 方案：toggle 改为面板隐藏时打开、面板可见但失焦时聚焦输入区、焦点在 Chat 内时隐藏；panel window 显式清空 winbar/statusline，并增加 `ui.height` 与可选 `ui.message_height`。
+- 预防：测试必须断言 pane winbar 为空、toggle 失焦后聚焦 input、`ui.width/ui.height/ui.message_height` 配置存在且稳定。
+- commitID：3c13fb5
