@@ -61,7 +61,7 @@ opencode.setup({
   port = fake_port,
   startup_timeout_ms = 3000,
   response_timeout_ms = 3000,
-  agent = "build",
+  agent = "quick",
   model = "deepseek/deepseek-v4-flash",
   variant = "low",
 })
@@ -117,7 +117,7 @@ assert_true(wait_for(function()
 end, 5000), "submit should create session and send prompt to fake headless server")
 
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
-assert_eq(session_payload.agent, "build", "session create should include configured opencode agent")
+assert_eq(session_payload.agent, "quick", "session create should include configured opencode agent")
 assert_eq(session_payload.model.providerID, "deepseek", "session create model should include providerID")
 assert_eq(session_payload.model.id, "deepseek-v4-flash", "session create model should include id")
 assert_eq(session_payload.model.variant, "low", "session create model should include variant")
@@ -125,7 +125,7 @@ assert_eq(session_payload.model.variant, "low", "session create model should inc
 local lines = vim.fn.readfile(prompt_file)
 local payload = vim.json.decode(lines[#lines])
 local sent_text = payload.parts[1].text
-assert_eq(payload.agent, "build", "message payload should include configured opencode agent")
+assert_eq(payload.agent, "quick", "message payload should include configured opencode agent")
 assert_eq(payload.model.providerID, "deepseek", "message payload model should include providerID")
 assert_eq(payload.model.modelID, "deepseek-v4-flash", "message payload model should include modelID")
 assert_eq(payload.variant, "low", "message payload should include configured variant")

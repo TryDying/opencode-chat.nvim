@@ -19,7 +19,7 @@
 
 ```lua
 require("opencode_chat").setup({
-  agent = "build",
+  agent = "quick",
   model = "deepseek/deepseek-v4-flash",
   variant = "low",
 })
