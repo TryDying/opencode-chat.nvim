@@ -37,6 +37,10 @@ function M.abort_url(session_id, opts)
   return url("/session/" .. session_id .. "/abort", opts)
 end
 
+function M.rename_session_url(session_id, opts)
+  return url("/session/" .. session_id, opts)
+end
+
 function M.v1_abort_url(session_id, opts)
   return url("/v1/sessions/" .. session_id .. "/abort", opts)
 end
@@ -165,6 +169,22 @@ local function post_json(target_url, payload, cb)
     "-sS",
     "-X",
     "POST",
+    target_url,
+    "-H",
+    "Content-Type: application/json",
+    "--data",
+    vim.json.encode(payload),
+  }), function(result)
+    finish(result, cb)
+  end)
+end
+
+local function patch_json(target_url, payload, cb)
+  return M.run(with_status({
+    "curl",
+    "-sS",
+    "-X",
+    "PATCH",
     target_url,
     "-H",
     "Content-Type: application/json",
@@ -346,6 +366,10 @@ end
 
 function M.list_project_sessions(project_id, opts, cb)
   return get_json(M.project_sessions_url(project_id, opts), cb)
+end
+
+function M.rename_session(session_id, title, opts, cb)
+  return patch_json(M.rename_session_url(session_id, opts), { title = title }, cb)
 end
 
 function M.extract_message_role_text(message)

@@ -48,7 +48,8 @@ These routing rules are mandatory for this repository.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
 - Session lists must be scoped to the current project/workspace: prefer `/project/:projectID/session`; if falling back to global `/session`, filter by `projectID` or normalized `directory`.
 - Hiding the Chat UI must close any open picker/menu, and focusing the message pane must not enter insert mode.
-- The main Chat UI should keep toolbar and status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Streaming/Error request states.
+- The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Streaming/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
+- Global keymaps must be user-configurable through `keymaps`; do not hard-code or register default global mappings. Recommended examples are `<leader>Xl`, `<leader>Xn`, `<leader>Xr`, `<leader>Xm`, and `<leader>Xt`.
 - Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.
 - Project root markers are `.root`, `.git`, `.svn`, `.hg`, `.project`, `.ccls`.
@@ -75,7 +76,7 @@ These routing rules are mandatory for this repository.
 - Manually verify message/input pane keyboard switching with `<Tab>`, auto-scroll to latest messages, and backend cancellation with `<C-c>` or `:OpencodeCancel`.
 - Manually verify `:OpencodeEdit` operates on sandbox/test files unless intentionally targeting a real file; opencode backend is expected to perform edits.
 - Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
-- Manually verify `<leader>Xl`, `<leader>Xn`, `<leader>Xm`, and `<leader>Xv`, including mouse clicks on the Chat UI action row.
+- Manually verify configured keymaps such as `<leader>Xl`, `<leader>Xn`, `<leader>Xr`, `<leader>Xm`, and `<leader>Xt`.
 - Manually verify that reversed Visual selections still produce ascending line ranges.
 
 ## Documentation maintenance rules

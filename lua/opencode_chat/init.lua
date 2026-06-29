@@ -56,34 +56,32 @@ local function build_prompt(text)
   return context_text .. "\n\n" .. text, project_root
 end
 
-local function set_default_keymaps()
+local function set_configured_keymaps(keymaps)
+  if type(keymaps) ~= "table" then
+    return
+  end
   local opts = { noremap = true, silent = true }
-  vim.keymap.set("n", "<M-->", function()
-    require("opencode_chat").toggle()
-  end, vim.tbl_extend("force", opts, { desc = "Toggle opencode chat" }))
-  vim.keymap.set("v", "<M-->", function()
-    require("opencode_chat").append_selection()
-  end, vim.tbl_extend("force", opts, { desc = "Append selection to opencode chat" }))
-  vim.keymap.set("n", "<leader>Xl", function()
-    require("opencode_chat").show_sessions()
-  end, vim.tbl_extend("force", opts, { desc = "List opencode sessions" }))
-  vim.keymap.set("n", "<leader>Xn", function()
-    require("opencode_chat").new_session()
-  end, vim.tbl_extend("force", opts, { desc = "New opencode session" }))
-  vim.keymap.set("n", "<leader>Xm", function()
-    require("opencode_chat").show_models()
-  end, vim.tbl_extend("force", opts, { desc = "Select opencode model" }))
-  vim.keymap.set("n", "<leader>Xv", function()
-    require("opencode_chat").show_variants()
-  end, vim.tbl_extend("force", opts, { desc = "Select opencode variant" }))
+  local maps = {
+    toggle = { mode = "n", rhs = function() require("opencode_chat").toggle() end, desc = "Toggle opencode chat" },
+    append_selection = { mode = "v", rhs = function() require("opencode_chat").append_selection() end, desc = "Append selection to opencode chat" },
+    sessions = { mode = "n", rhs = function() require("opencode_chat").show_sessions() end, desc = "List opencode sessions" },
+    new_session = { mode = "n", rhs = function() require("opencode_chat").new_session() end, desc = "New opencode session" },
+    rename_session = { mode = "n", rhs = function() require("opencode_chat").rename_session() end, desc = "Rename opencode session" },
+    models = { mode = "n", rhs = function() require("opencode_chat").show_models() end, desc = "Select opencode model" },
+    variants = { mode = "n", rhs = function() require("opencode_chat").show_variants() end, desc = "Select opencode variant" },
+  }
+  for name, lhs in pairs(keymaps) do
+    local map = maps[name]
+    if map and lhs and lhs ~= "" then
+      vim.keymap.set(map.mode, lhs, map.rhs, vim.tbl_extend("force", opts, { desc = map.desc }))
+    end
+  end
 end
 
 function M.setup(opts)
   local cfg = config.setup(opts)
   commands.setup(M)
-  if cfg.keymaps then
-    set_default_keymaps()
-  end
+  set_configured_keymaps(cfg.keymaps)
   return M
 end
 
@@ -282,7 +280,7 @@ function M.show_sessions()
         })
       end
       picker.show({
-        title = "opencode sessions",
+        title = "opencode sessions (:OpencodeRenameSession / rename_session keymap)",
         items = items,
         on_select = function(item)
           M.select_session(item.value)
@@ -310,6 +308,39 @@ function M.select_session(session_id)
       ui.set_messages(messages)
     end)
   end)
+end
+
+function M.rename_session(title)
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
+  local current = server.state().session_id
+  if not current then
+    notify_error("no active opencode session")
+    return
+  end
+  local function apply(new_title)
+    new_title = vim.trim(new_title or "")
+    if new_title == "" then
+      return
+    end
+    server.rename_session(current, new_title, function(ok, _data, err)
+      vim.schedule(function()
+        if not ok then
+          notify_error("opencode rename session failed: " .. tostring(err))
+          return
+        end
+        ui.add_message("System", "Session renamed: " .. new_title)
+      end)
+    end)
+  end
+  if title and title ~= "" then
+    apply(title)
+    return
+  end
+  local session = server.state().sessions[current] or {}
+  vim.ui.input({ prompt = "Session title: ", default = session.title or "" }, apply)
 end
 
 function M.show_models()

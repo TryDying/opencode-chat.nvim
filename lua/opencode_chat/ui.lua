@@ -3,18 +3,15 @@ local config = require("opencode_chat.config")
 local M = {}
 
 local state = {
-  toolbar_win = nil,
   message_win = nil,
   status_win = nil,
   input_win = nil,
-  toolbar_buf = nil,
   message_buf = nil,
   status_buf = nil,
   input_buf = nil,
   messages = {},
   context = {},
   context_root = nil,
-  actions = {},
   status = "Idle",
   spinner = nil,
   spinner_index = 1,
@@ -43,14 +40,6 @@ local function set_buf_options(buf, filetype)
 end
 
 local function ensure_buffers()
-  if not valid_buf(state.toolbar_buf) then
-    state.toolbar_buf = vim.api.nvim_create_buf(false, true)
-    set_buf_options(state.toolbar_buf, "opencode-toolbar")
-    vim.bo[state.toolbar_buf].modifiable = false
-    vim.keymap.set("n", "<LeftMouse>", function()
-      require("opencode_chat.ui").click_action()
-    end, { buffer = state.toolbar_buf, silent = true, desc = "opencode chat action" })
-  end
   if not valid_buf(state.message_buf) then
     state.message_buf = vim.api.nvim_create_buf(false, true)
     set_buf_options(state.message_buf, "markdown")
@@ -97,7 +86,7 @@ end
 
 local function open_windows()
   ensure_buffers()
-  if valid_win(state.toolbar_win) and valid_win(state.message_win) and valid_win(state.status_win) and valid_win(state.input_win) then
+  if valid_win(state.message_win) and valid_win(state.status_win) and valid_win(state.input_win) then
     return
   end
 
@@ -114,15 +103,8 @@ local function open_windows()
   vim.wo[state.message_win].number = false
   vim.wo[state.message_win].relativenumber = false
   vim.wo[state.message_win].wrap = true
-
-  vim.cmd("aboveleft 1split")
-  state.toolbar_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(state.toolbar_win, state.toolbar_buf)
-  vim.wo[state.toolbar_win].winfixwidth = true
-  vim.wo[state.toolbar_win].winfixheight = true
-  vim.wo[state.toolbar_win].number = false
-  vim.wo[state.toolbar_win].relativenumber = false
-  vim.api.nvim_win_set_height(state.toolbar_win, 1)
+  vim.wo[state.message_win].statusline = " "
+  vim.wo[state.message_win].winbar = " "
 
   vim.api.nvim_set_current_win(state.message_win)
   vim.cmd("belowright " .. input_height .. "split")
@@ -131,15 +113,19 @@ local function open_windows()
   vim.wo[state.input_win].winfixheight = true
   vim.wo[state.input_win].number = false
   vim.wo[state.input_win].relativenumber = false
+  vim.wo[state.input_win].statusline = " "
+  vim.wo[state.input_win].winbar = " "
   vim.api.nvim_win_set_height(state.input_win, input_height)
 
-  vim.api.nvim_set_current_win(state.message_win)
+  vim.api.nvim_set_current_win(state.input_win)
   vim.cmd("belowright 1split")
   state.status_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.status_win, state.status_buf)
   vim.wo[state.status_win].winfixheight = true
   vim.wo[state.status_win].number = false
   vim.wo[state.status_win].relativenumber = false
+  vim.wo[state.status_win].statusline = " "
+  vim.wo[state.status_win].winbar = " "
   vim.api.nvim_win_set_height(state.status_win, 1)
 
   vim.o.winminheight = old_winminheight
@@ -165,7 +151,6 @@ function M.render()
     return
   end
 
-  M.render_toolbar()
   M.render_status()
 
   local lines = { "# opencode-chat.nvim", "" }
@@ -203,19 +188,6 @@ function M.render()
   end
 end
 
-function M.render_toolbar()
-  if not valid_buf(state.toolbar_buf) then
-    return
-  end
-  state.actions = {
-    { label = "Sessions", start_col = 1, end_col = 12, action = "sessions" },
-    { label = "New", start_col = 14, end_col = 20, action = "new_session" },
-    { label = "Model", start_col = 22, end_col = 30, action = "model" },
-    { label = "Variant", start_col = 32, end_col = 42, action = "variant" },
-  }
-  set_lines(state.toolbar_buf, { "[ Sessions ] [ New ] [ Model ] [ Variant ]" })
-end
-
 function M.render_status()
   if not valid_buf(state.status_buf) then
     return
@@ -223,28 +195,6 @@ function M.render_status()
   local model = config.current_model()
   local line = string.format(" %s | %s/%s | %s ", state.status or "Idle", model.providerID or "?", model.modelID or "?", model.variant or "?")
   set_lines(state.status_buf, { line })
-end
-
-function M.click_action()
-  local pos = vim.fn.getmousepos()
-  if pos.winid ~= state.toolbar_win then
-    return
-  end
-  for _, action in ipairs(state.actions) do
-    if pos.column >= action.start_col and pos.column <= action.end_col then
-      local api = require("opencode_chat")
-      if action.action == "sessions" then
-        api.show_sessions()
-      elseif action.action == "new_session" then
-        api.new_session()
-      elseif action.action == "model" then
-        api.show_models()
-      elseif action.action == "variant" then
-        api.show_variants()
-      end
-      return
-    end
-  end
 end
 
 function M.show(opts)
@@ -284,9 +234,6 @@ function M.hide()
   pcall(function()
     require("opencode_chat.picker").close()
   end)
-  if valid_win(state.toolbar_win) then
-    vim.api.nvim_win_close(state.toolbar_win, true)
-  end
   if valid_win(state.message_win) then
     vim.api.nvim_win_close(state.message_win, true)
   end
@@ -296,7 +243,6 @@ function M.hide()
   if valid_win(state.input_win) then
     vim.api.nvim_win_close(state.input_win, true)
   end
-  state.toolbar_win = nil
   state.message_win = nil
   state.status_win = nil
   state.input_win = nil
@@ -409,9 +355,6 @@ end
 
 function M.close()
   M.hide()
-  if valid_buf(state.toolbar_buf) then
-    vim.api.nvim_buf_delete(state.toolbar_buf, { force = true })
-  end
   if valid_buf(state.message_buf) then
     vim.api.nvim_buf_delete(state.message_buf, { force = true })
   end
@@ -421,7 +364,6 @@ function M.close()
   if valid_buf(state.input_buf) then
     vim.api.nvim_buf_delete(state.input_buf, { force = true })
   end
-  state.toolbar_buf = nil
   state.message_buf = nil
   state.status_buf = nil
   state.input_buf = nil

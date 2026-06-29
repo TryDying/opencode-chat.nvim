@@ -33,6 +33,10 @@ function M.setup(api)
     api.show_sessions()
   end, { force = true })
 
+  vim.api.nvim_create_user_command("OpencodeRenameSession", function(opts)
+    api.rename_session(opts.args)
+  end, { nargs = "*", force = true })
+
   vim.api.nvim_create_user_command("OpencodeModels", function()
     api.show_models()
   end, { force = true })

@@ -9,13 +9,12 @@
 - Chat 输入区按 `<C-s>` 提交。
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
-- Chat UI 顶部固定 toolbar，可点击 `[ Sessions ] [ New ] [ Model ] [ Variant ]`。
 - Chat UI 底部固定 status bar，显示 Idle/Thinking/Streaming/Error 等状态和当前 model/variant。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
-- `:OpencodeSessions` / `<leader>Xl` 选择当前 project 的 session，`:OpencodeNewSession` / `<leader>Xn` 新建 session 且不重启 server。
-- `:OpencodeModels` / `<leader>Xm` 选择白名单模型，`:OpencodeVariants` / `<leader>Xv` 按当前 provider 选择 variant。
+- `:OpencodeSessions` 选择当前 project 的 session，`:OpencodeNewSession` 新建 session 且不重启 server，`:OpencodeRenameSession [title]` 重命名当前 session。
+- `:OpencodeModels` 选择白名单模型，`:OpencodeVariants` 按当前 provider 选择 variant。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
 ## 依赖
@@ -38,6 +37,15 @@ require("opencode_chat").setup({
       },
     },
   },
+  keymaps = {
+    toggle = "<M-->",
+    append_selection = "<M-->",
+    sessions = "<leader>Xl",
+    new_session = "<leader>Xn",
+    rename_session = "<leader>Xr",
+    models = "<leader>Xm",
+    variants = "<leader>Xt",
+  },
 })
 
 vim.keymap.set("n", "<M-->", function()
@@ -53,11 +61,11 @@ end, { desc = "Append selection to opencode" })
 
 如果当前 opencode server 支持 `/event/subscribe` SSE 事件流，插件会尝试根据 `message.part.updated` 增量刷新 assistant 回复；不可用时自动退回非流式响应。
 
-默认会绑定：
+插件默认不绑定全局快捷键；如需快捷键，请在 `keymaps` 中显式配置：
 
 - Normal `<M-->`：toggle Chat UI
 - Visual `<M-->`：追加选区上下文
-- Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xm` / `<leader>Xv`：选择 session、新建 session、选择 model、选择 variant
+- Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xr` / `<leader>Xm` / `<leader>Xt`：选择 session、新建 session、重命名 session、选择 model、选择 variant
 
 ## 验证
 

@@ -334,4 +334,32 @@ function M.select_session(session_id, cb)
   end)
 end
 
+function M.rename_session(session_id, title, cb)
+  if not session_id or session_id == "" then
+    cb(false, nil, "session id is required")
+    return
+  end
+  if not title or title == "" then
+    cb(false, nil, "session title is required")
+    return
+  end
+  M.ensure_server(nil, function(ok, _current, err)
+    if not ok then
+      cb(false, nil, err)
+      return
+    end
+    client.rename_session(session_id, title, { host = config.get().host, port = state.port }, function(rename_ok, data, result)
+      if not rename_ok then
+        cb(false, nil, client.format_error(result, "failed to rename session"))
+        return
+      end
+      remember_session(session_id, data or { id = session_id, title = title })
+      if state.sessions[session_id] then
+        state.sessions[session_id].title = title
+      end
+      cb(true, data)
+    end)
+  end)
+end
+
 return M

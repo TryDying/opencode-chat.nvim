@@ -52,6 +52,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         self._text("not found", 404)
 
+    def do_PATCH(self):
+        length = int(self.headers.get("content-length", "0"))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body) if body else {}
+        match = re.match(r"^/session/([^/]+)$", self.path)
+        if match:
+            session_id = match.group(1)
+            for session in SESSIONS:
+                if session.get("id") == session_id:
+                    if data.get("title"):
+                        session["title"] = data.get("title")
+                    with open(os.path.join(os.getcwd(), ".opencode-chat-rename.jsonl"), "a", encoding="utf-8") as f:
+                        f.write(json.dumps({"sessionID": session_id, "title": session.get("title")}, ensure_ascii=False) + "\n")
+                    self._json(session)
+                    return
+            self._text("not found", 404)
+            return
+        self._text("not found", 404)
+
     def do_POST(self):
         global SESSION_COUNTER, SESSIONS, MESSAGES, ABORTED
         length = int(self.headers.get("content-length", "0"))

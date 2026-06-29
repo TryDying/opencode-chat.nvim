@@ -15,7 +15,7 @@ M.defaults = {
       },
     },
   },
-  keymaps = true,
+  keymaps = {},
   root_markers = { ".root", ".git", ".svn", ".hg", ".project", ".ccls" },
   startup_timeout_ms = 5000,
   response_timeout_ms = 30000,

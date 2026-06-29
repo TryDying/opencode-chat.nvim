@@ -74,6 +74,15 @@ opencode.setup({
       },
     },
   },
+  keymaps = {
+    toggle = "<M-->",
+    append_selection = "<M-->",
+    sessions = "<leader>Xl",
+    new_session = "<leader>Xn",
+    rename_session = "<leader>Xr",
+    models = "<leader>Xm",
+    variants = "<leader>Xt",
+  },
 })
 
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
@@ -81,14 +90,17 @@ assert_true(vim.fn.exists(":OpencodeAsk") == 2, "ask command should be registere
 assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registered")
 assert_true(vim.fn.exists(":OpencodeCancel") == 2, "cancel command should be registered")
 assert_true(vim.fn.exists(":OpencodeSessions") == 2, "sessions command should be registered")
+assert_true(vim.fn.exists(":OpencodeRenameSession") == 2, "rename session command should be registered")
 assert_true(vim.fn.exists(":OpencodeModels") == 2, "models command should be registered")
 assert_true(vim.fn.exists(":OpencodeVariants") == 2, "variants command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
 assert_true(vim.fn.maparg("<M-->", "v") ~= "", "visual <M--> should be mapped")
 assert_true(vim.fn.maparg("<leader>Xl", "n") ~= "", "session list keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xn", "n") ~= "", "new session keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xr", "n") ~= "", "rename session keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xm", "n") ~= "", "model picker keymap should be mapped")
-assert_true(vim.fn.maparg("<leader>Xv", "n") ~= "", "variant picker keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xt", "n") ~= "", "variant picker keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xv", "n") == "", "old variant keymap should not be mapped")
 assert_true(not pcall(function()
   config.setup({ variant = "low" })
 end), "top-level variant config should be rejected")
@@ -118,6 +130,7 @@ assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.
 assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
+assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc", "rename URL should target session update API")
 assert_eq(client.project_sessions_url("project", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project/session", "project sessions URL should target project-scoped sessions")
 assert_eq(client.event_subscribe_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/event/subscribe", "event subscribe URL should target SSE endpoint")
 assert_eq(client.extract_assistant_text({
@@ -129,10 +142,11 @@ assert_eq(client.format_error({ status = 400, body = "bad request", stderr = "" 
 opencode.append_file()
 assert_eq(ui.state().context[1].label, "@src/example.lua", "append_file should add structured context")
 assert_true(ui.state().context[1].text:match("return a %+ b") ~= nil, "context should include code text")
-assert_true(vim.api.nvim_win_is_valid(ui.state().toolbar_win), "toolbar window should exist")
 assert_true(vim.api.nvim_win_is_valid(ui.state().status_win), "status window should exist")
 assert_eq(vim.api.nvim_win_get_config(ui.state().message_win).relative, "", "chat message pane should be a normal split, not a float")
 assert_true(vim.api.nvim_win_get_width(ui.state().message_win) <= math.ceil(vim.o.columns * 0.45), "chat panel should use the right-side configured width")
+assert_true(ui.state().toolbar_win == nil, "toolbar window should be removed")
+assert_true(vim.api.nvim_win_get_position(ui.state().status_win)[1] > vim.api.nvim_win_get_position(ui.state().input_win)[1], "status bar should be below input pane")
 
 ui.set_input("这是啥")
 opencode.submit()
@@ -241,6 +255,10 @@ local session_lines = vim.fn.readfile(session_file)
 local newest_session_payload = vim.json.decode(session_lines[#session_lines])
 assert_eq(newest_session_payload.model.id, "deepseek-v4-pro", "new_session should use selected model")
 assert_eq(newest_session_payload.model.variant, "max", "new_session should use selected variant")
+opencode.rename_session("Renamed test session")
+assert_true(wait_for(function()
+  return vim.fn.filereadable(tmp .. "/.opencode-chat-rename.jsonl") == 1 and server.state().sessions["test-session-2"] and server.state().sessions["test-session-2"].title == "Renamed test session"
+end, 3000), "rename_session should update backend and local session cache")
 
 opencode.show_sessions()
 assert_true(wait_for(function()
@@ -248,7 +266,7 @@ assert_true(wait_for(function()
 end, 1000), "session picker should open")
 local session_picker_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
 assert_true(session_picker_lines:match("test%-session%-1") ~= nil, "session picker should include first session")
-assert_true(session_picker_lines:match("test%-session%-2") ~= nil, "session picker should include latest session")
+assert_true(session_picker_lines:match("Renamed test session") ~= nil, "session picker should include renamed latest session")
 assert_true(session_picker_lines:match("foreign%-session") == nil, "session picker should filter out sessions from other projects")
 picker.close()
 opencode.select_session("test-session-1")
