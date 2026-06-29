@@ -114,3 +114,10 @@
 - 方案：主 Chat UI 改为右侧 40% split panel，并拆成固定 toolbar、滚动 message、固定 status 和 input 窗口；请求中显示 Thinking/Streaming 状态，并尝试订阅 `/event/subscribe` SSE 增量刷新。
 - 预防：测试必须断言主消息区是普通 split 而非 float、toolbar/status window 存在、panel 宽度受配置约束，并保留 SSE 不可用时的非流式 fallback。
 - commitID：7731ccf
+
+## 2026-06-29：主面板入口应优先键盘且可配置
+
+- 问题：主面板 toolbar/鼠标按钮会引入额外 pane 标题和布局噪音；硬编码全局快捷键也会和用户现有映射冲突。
+- 方案：移除主 UI toolbar，只保留 message/input/status；全局快捷键改为用户通过 `keymaps` 显式配置，variant 推荐 `<leader>Xt`，并新增当前 session 重命名入口。
+- 预防：测试必须断言 toolbar window 不存在、status 在 input 下方、旧 `<leader>Xv` 不再注册、新 `<leader>Xt` / `<leader>Xr` 可配置，并覆盖 `PATCH /session/:id` 重命名。
+- commitID：166e3cc
