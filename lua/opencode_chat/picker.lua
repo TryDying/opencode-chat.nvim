@@ -3,6 +3,7 @@ local M = {}
 local state = {
   win = nil,
   buf = nil,
+  menu = nil,
   items = {},
   line_items = {},
   on_select = nil,
@@ -17,6 +18,11 @@ local function valid_buf(buf_id)
 end
 
 function M.close()
+  if state.menu then
+    pcall(function()
+      state.menu:unmount()
+    end)
+  end
   if valid_win(state.win) then
     vim.api.nvim_win_close(state.win, true)
   end
@@ -25,9 +31,69 @@ function M.close()
   end
   state.win = nil
   state.buf = nil
+  state.menu = nil
   state.items = {}
   state.line_items = {}
   state.on_select = nil
+end
+
+local function show_nui(opts)
+  local ok_menu, Menu = pcall(require, "nui.menu")
+  if not ok_menu then
+    return false
+  end
+
+  local lines = {}
+  local current_group
+  for _, item in ipairs(state.items) do
+    if item.group and item.group ~= current_group then
+      current_group = item.group
+      table.insert(lines, Menu.separator(item.group))
+    end
+    table.insert(lines, Menu.item((item.selected and "✓ " or "  ") .. item.label, { value = item }))
+  end
+  if #lines == 0 then
+    table.insert(lines, Menu.item("(empty)", { value = nil }))
+  end
+
+  local width = opts.width or math.min(64, math.max(36, math.floor(vim.o.columns * 0.5)))
+  local height = opts.height or math.min(#lines + 2, math.max(8, math.floor(vim.o.lines * 0.45)))
+  state.menu = Menu({
+    position = "50%",
+    size = { width = width, height = height },
+    border = {
+      style = "rounded",
+      text = { top = " " .. (opts.title or "Select") .. " ", top_align = "center" },
+    },
+    win_options = { cursorline = true },
+  }, {
+    lines = lines,
+    max_width = width - 4,
+    keymap = {
+      focus_next = { "j", "<Down>", "<Tab>" },
+      focus_prev = { "k", "<Up>", "<S-Tab>" },
+      close = { "q", "<Esc>", "<C-c>" },
+      submit = { "<CR>", "<Space>" },
+    },
+    on_close = function()
+      state.win = nil
+      state.buf = nil
+      state.menu = nil
+    end,
+    on_submit = function(item)
+      local selected = item and item.value
+      local on_select = state.on_select
+      M.close()
+      if selected and on_select then
+        on_select(selected)
+      end
+    end,
+  })
+  state.menu:mount()
+  state.win = state.menu.winid
+  state.buf = state.menu.bufnr
+  pcall(vim.cmd, "stopinsert")
+  return true
 end
 
 local function select_line(line)
@@ -47,6 +113,9 @@ function M.show(opts)
   M.close()
   state.items = opts.items or {}
   state.on_select = opts.on_select
+  if show_nui(opts) then
+    return
+  end
   state.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[state.buf].bufhidden = "wipe"
   vim.bo[state.buf].modifiable = false
@@ -85,6 +154,7 @@ function M.show(opts)
     title = " " .. (opts.title or "Select") .. " ",
     style = "minimal",
   })
+  vim.wo[state.win].cursorline = true
 
   vim.keymap.set("n", "<CR>", function()
     select_line(vim.api.nvim_win_get_cursor(0)[1])
@@ -97,6 +167,11 @@ function M.show(opts)
       select_line(pos.line)
     end
   end, { buffer = state.buf, silent = true })
+  for line, _ in pairs(state.line_items) do
+    pcall(vim.api.nvim_win_set_cursor, state.win, { line, 0 })
+    break
+  end
+  pcall(vim.cmd, "stopinsert")
 end
 
 function M.state()

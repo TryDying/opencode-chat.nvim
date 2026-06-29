@@ -13,9 +13,14 @@
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
-- `:OpencodeSessions` / `<leader>Xl` 选择 session，`:OpencodeNewSession` / `<leader>Xn` 新建 session 且不重启 server。
+- `:OpencodeSessions` / `<leader>Xl` 选择当前 project 的 session，`:OpencodeNewSession` / `<leader>Xn` 新建 session 且不重启 server。
 - `:OpencodeModels` / `<leader>Xm` 选择白名单模型，`:OpencodeVariants` / `<leader>Xv` 按当前 provider 选择 variant。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
+
+## 依赖
+
+- 必需：Neovim、`curl`、可用的 `opencode` CLI。
+- 推荐：`nui.nvim`。插件会优先用 `nui.menu` 渲染 session/model/variant 选择器；缺失时会退回内置浮窗选择器，便于测试和最小环境运行。
 
 ## 配置示例
 

@@ -31,6 +31,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json([{"id": "test-project", "worktree": os.getcwd()}])
             return
         if self.path == "/session":
+            foreign = {
+                "id": "foreign-session",
+                "title": "Other workspace session",
+                "projectID": "other-project",
+                "directory": "/tmp/other-workspace",
+            }
+            self._json(SESSIONS + [foreign])
+            return
+        if self.path == "/project/test-project/session":
             self._json(SESSIONS)
             return
         match = re.match(r"^/session/([^/]+)/message$", self.path)
@@ -53,7 +62,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             SESSION_COUNTER += 1
             session_id = f"test-session-{SESSION_COUNTER}"
             ABORTED[session_id] = False
-            session = {"id": session_id, "title": data.get("title") or session_id}
+            session = {"id": session_id, "title": data.get("title") or session_id, "projectID": "test-project", "directory": os.getcwd()}
             SESSIONS.append(session)
             MESSAGES.setdefault(session_id, [])
             self._record_session(data)

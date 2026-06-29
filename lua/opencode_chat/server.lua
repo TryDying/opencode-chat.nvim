@@ -21,6 +21,13 @@ local function job_running(job_id)
   return job_id and vim.fn.jobwait({ job_id }, 0)[1] == -1
 end
 
+local function normalize_path(value)
+  if type(value) ~= "string" or value == "" then
+    return nil
+  end
+  return vim.fs.normalize(value)
+end
+
 function M.state()
   return state
 end
@@ -32,8 +39,36 @@ local function remember_session(session_id, data)
   state.sessions[session_id] = vim.tbl_extend("force", state.sessions[session_id] or {}, {
     id = session_id,
     title = (data and (data.title or (data.data and data.data.title))) or session_id,
+    projectID = data and (data.projectID or (data.data and data.data.projectID)),
+    directory = data and (data.directory or (data.data and data.data.directory)),
     model = config.current_model(),
   })
+end
+
+local function session_matches_project(session)
+  if type(session) ~= "table" then
+    return false
+  end
+  if state.project_id and session.projectID == state.project_id then
+    return true
+  end
+  local session_dir = normalize_path(session.directory)
+  local current_root = normalize_path(state.root)
+  return session_dir ~= nil and current_root ~= nil and session_dir == current_root
+end
+
+local function collect_sessions(raw, filter_project)
+  local sessions = {}
+  if type(raw) ~= "table" then
+    return sessions
+  end
+  for _, item in ipairs(raw) do
+    if type(item) == "table" and item.id and (not filter_project or session_matches_project(item)) then
+      table.insert(sessions, item)
+      remember_session(item.id, item)
+    end
+  end
+  return sessions
 end
 
 function M.ensure_server(startpath, cb)
@@ -198,26 +233,37 @@ function M.list_sessions(cb)
       cb(false, {}, err)
       return
     end
-    client.list_sessions({ host = config.get().host, port = state.port }, function(list_ok, data, result)
-      local sessions = {}
-      local raw = data and (data.data or data)
-      if list_ok and type(raw) == "table" then
-        for _, item in ipairs(raw) do
-          if type(item) == "table" and item.id then
-            table.insert(sessions, item)
-            remember_session(item.id, item)
-          end
-        end
-      end
+    local opts = { host = config.get().host, port = state.port }
+    local function finish_with_cache(sessions, list_ok, result)
       if #sessions == 0 then
         for _, item in pairs(state.sessions) do
-          table.insert(sessions, item)
+          if session_matches_project(item) then
+            table.insert(sessions, item)
+          end
         end
       end
       table.sort(sessions, function(a, b)
         return tostring(a.title or a.id) < tostring(b.title or b.id)
       end)
       cb(#sessions > 0 or list_ok, sessions, list_ok and nil or client.format_error(result, "failed to list sessions"))
+    end
+
+    if state.project_id then
+      client.list_project_sessions(state.project_id, opts, function(project_ok, project_data, project_result)
+        local project_sessions = collect_sessions(project_data and (project_data.data or project_data), false)
+        if project_ok then
+          finish_with_cache(project_sessions, true, project_result)
+          return
+        end
+        client.list_sessions(opts, function(list_ok, data, result)
+          finish_with_cache(collect_sessions(data and (data.data or data), true), list_ok, list_ok and result or project_result)
+        end)
+      end)
+      return
+    end
+
+    client.list_sessions(opts, function(list_ok, data, result)
+      finish_with_cache(collect_sessions(data and (data.data or data), true), list_ok, result)
     end)
   end)
 end

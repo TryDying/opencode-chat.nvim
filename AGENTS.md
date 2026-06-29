@@ -40,12 +40,14 @@ These routing rules are mandatory for this repository.
 
 ## Architecture highlights
 
-- Use native Neovim buffers/floating windows for the MVP UI; do not add `vim-floaterm` support.
+- Use Neovim floating windows for the MVP UI; `nui.nvim` may be used for picker/menu UI, but do not add `vim-floaterm` support.
 - MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session`, and `POST /session/:sessionID/message`, with legacy `/api/session` fallback only for compatibility.
 - Model configuration uses provider-grouped allowlists: `model = "provider/model"`, `providers[provider].variants`, and `providers[provider].models[].default_variant`; do not use top-level `variant`.
 - `agent`, `model`, and `variant` must be included in current `/session/:sessionID/message` payloads; session creation uses model `{ providerID, id, variant }`, while messages use `{ providerID, modelID }` plus top-level `agent`/`variant`.
 - Cancellation must call `POST /session/:sessionID/abort`; do not represent local curl/loop termination as backend cancellation.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
+- Session lists must be scoped to the current project/workspace: prefer `/project/:projectID/session`; if falling back to global `/session`, filter by `projectID` or normalized `directory`.
+- Hiding the Chat UI must close any open picker/menu, and focusing the message pane must not enter insert mode.
 - Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.
 - Project root markers are `.root`, `.git`, `.svn`, `.hg`, `.project`, `.ccls`.

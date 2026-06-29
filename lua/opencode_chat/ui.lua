@@ -185,11 +185,17 @@ function M.click_action()
   end
 end
 
-function M.show()
+function M.show(opts)
+  opts = opts or {}
   open_windows()
   M.render()
-  vim.api.nvim_set_current_win(state.input_win)
-  vim.cmd("startinsert")
+  if opts.focus == "messages" then
+    vim.api.nvim_set_current_win(state.message_win)
+    pcall(vim.cmd, "stopinsert")
+  elseif opts.focus ~= "none" then
+    vim.api.nvim_set_current_win(state.input_win)
+    vim.cmd("startinsert")
+  end
   return state
 end
 
@@ -197,6 +203,7 @@ function M.focus_messages()
   open_windows()
   M.render()
   vim.api.nvim_set_current_win(state.message_win)
+  pcall(vim.cmd, "stopinsert")
 end
 
 function M.focus_input()
@@ -207,6 +214,9 @@ function M.focus_input()
 end
 
 function M.hide()
+  pcall(function()
+    require("opencode_chat.picker").close()
+  end)
   if valid_win(state.message_win) then
     vim.api.nvim_win_close(state.message_win, true)
   end
@@ -229,7 +239,7 @@ end
 function M.add_context(item, project_root)
   table.insert(state.context, item)
   state.context_root = project_root or state.context_root
-  M.show()
+  M.show({ focus = "input" })
 end
 
 function M.consume_context()
@@ -255,7 +265,11 @@ end
 
 function M.add_message(role, text)
   table.insert(state.messages, { role = role, text = text })
-  M.show()
+  if valid_win(state.message_win) or valid_win(state.input_win) then
+    M.render()
+  else
+    M.show({ focus = "input" })
+  end
 end
 
 function M.replace_last_if(role, old_text, new_role, new_text)
@@ -305,7 +319,7 @@ end
 
 function M.set_messages(messages)
   state.messages = messages or {}
-  M.show()
+  M.show({ focus = "messages" })
 end
 
 function M.close()

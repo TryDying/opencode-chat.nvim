@@ -49,6 +49,10 @@ function M.project_messages_url(project_id, session_id, opts)
   return url("/project/" .. project_id .. "/session/" .. session_id .. "/message", opts)
 end
 
+function M.project_sessions_url(project_id, opts)
+  return url("/project/" .. project_id .. "/session", opts)
+end
+
 function M.run(args, cb)
   if vim.system then
     return vim.system(args, { text = true }, cb)
@@ -305,6 +309,10 @@ end
 
 function M.list_sessions(opts, cb)
   return get_json(M.session_url(opts), cb)
+end
+
+function M.list_project_sessions(project_id, opts, cb)
+  return get_json(M.project_sessions_url(project_id, opts), cb)
 end
 
 function M.extract_message_role_text(message)
