@@ -84,3 +84,4 @@ VIM_PROFILE=basic nvim --headless -l tests/run.lua
 ```
 
 该命令会创建并打开 `/tmp/opencode-chat.nvim-sandbox/src/example.lua`，不会使用仓库内受 Git 管理的文件做测试目标。
+开发态脚本会显式注入推荐测试快捷键：`<M-->`、`<leader>Xl`、`<leader>Xn`、`<leader>Xr`、`<leader>Xm`、`<leader>Xt`；插件默认配置仍不注册全局快捷键。
