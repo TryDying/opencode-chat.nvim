@@ -100,3 +100,10 @@
 - 方案：配置改为 provider 分组白名单：provider 定义 `variants`，model 定义 `default_variant`；新增 session/model/variant picker，新建 session 只创建后端 session 而不重启 server。
 - 预防：测试必须覆盖 provider 分组 model picker、当前 provider variant picker、切模型重置默认 variant、手动切 variant 后 payload 生效，以及新建 session 不重启 server。
 - commitID：96b1551
+
+## 2026-06-29：session 列表不能直接展示全局 `/session`
+
+- 问题：`GET /session` 返回全局 session，直接渲染会混入其它 workspace、subagent 或 runner 会话；同时手写 picker 生命周期独立，隐藏 Chat UI 后选择器仍残留，消息区也可能被 insert 状态污染。
+- 方案：session 列表优先使用 `/project/:projectID/session`，fallback `/session` 时按 `projectID` 或归一化 `directory` 过滤；picker 优先使用 `nui.menu`，Chat hide 时统一关闭 picker，消息区聚焦显式退出 insert。
+- 预防：测试必须模拟外部 project session 并断言被过滤，同时覆盖 hide 关闭 picker、message pane 不进入 insert 模式。
+- commitID：de6a8e9
