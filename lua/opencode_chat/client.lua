@@ -167,6 +167,10 @@ end
 
 local function session_model(model, variant)
   local value = model_object(model)
+  if value and value.modelID then
+    value.id = value.modelID
+    value.modelID = nil
+  end
   if value and variant and variant ~= "" then
     value.variant = variant
   end
@@ -249,6 +253,15 @@ end
 function M.send_message(session_id, text, opts, cb)
   opts = opts or {}
   local payload = { parts = { { type = "text", text = text } } }
+  if opts.model then
+    payload.model = model_object(opts.model)
+  end
+  if opts.agent then
+    payload.agent = opts.agent
+  end
+  if opts.variant then
+    payload.variant = opts.variant
+  end
   local function send_legacy()
     local legacy_payload = { prompt = { text = text } }
     if opts.model then

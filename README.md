@@ -33,8 +33,7 @@ vim.keymap.set("v", "<M-->", function()
 end, { desc = "Append selection to opencode" })
 ```
 
-这些配置会在创建 opencode session 时发送；普通消息请求只发送 prompt parts。
-内部会把 `provider/model` 字符串转换成 `{ providerID, modelID, variant }`。
+这些配置会发送给 opencode：创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
 
 默认会绑定：
 

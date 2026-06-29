@@ -54,6 +54,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == f"/session/{SESSION_ID}/message":
+            if not data.get("model") or not data.get("agent") or not data.get("variant"):
+                self._record_prompt(data)
+                self._json([])
+                return
             text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
             self._record_prompt(data)
             if "slow response" in text:

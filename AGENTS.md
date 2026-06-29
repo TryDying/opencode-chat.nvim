@@ -42,7 +42,7 @@ These routing rules are mandatory for this repository.
 
 - Use native Neovim buffers/floating windows for the MVP UI; do not add `vim-floaterm` support.
 - MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session`, and `POST /session/:sessionID/message`, with legacy `/api/session` fallback only for compatibility.
-- `agent`, `model`, and `variant` are session-create options; do not repeat them in current `/session/:sessionID/message` payloads unless the server schema explicitly requires it.
+- `agent`, `model`, and `variant` must be included in current `/session/:sessionID/message` payloads; session creation uses model `{ providerID, id, variant }`, while messages use `{ providerID, modelID }` plus top-level `agent`/`variant`.
 - Cancellation must call `POST /session/:sessionID/abort`; do not represent local curl/loop termination as backend cancellation.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
 - Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
