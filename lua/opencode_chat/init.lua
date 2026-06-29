@@ -1,6 +1,7 @@
 local config = require("opencode_chat.config")
 local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
+local picker = require("opencode_chat.picker")
 local context = require("opencode_chat.context")
 local commands = require("opencode_chat.commands")
 
@@ -34,6 +35,18 @@ local function set_default_keymaps()
   vim.keymap.set("v", "<M-->", function()
     require("opencode_chat").append_selection()
   end, vim.tbl_extend("force", opts, { desc = "Append selection to opencode chat" }))
+  vim.keymap.set("n", "<leader>Xl", function()
+    require("opencode_chat").show_sessions()
+  end, vim.tbl_extend("force", opts, { desc = "List opencode sessions" }))
+  vim.keymap.set("n", "<leader>Xn", function()
+    require("opencode_chat").new_session()
+  end, vim.tbl_extend("force", opts, { desc = "New opencode session" }))
+  vim.keymap.set("n", "<leader>Xm", function()
+    require("opencode_chat").show_models()
+  end, vim.tbl_extend("force", opts, { desc = "Select opencode model" }))
+  vim.keymap.set("n", "<leader>Xv", function()
+    require("opencode_chat").show_variants()
+  end, vim.tbl_extend("force", opts, { desc = "Select opencode variant" }))
 end
 
 function M.setup(opts)
@@ -175,12 +188,126 @@ function M.edit(instruction)
 end
 
 function M.new_session()
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
   ui.clear()
   server.new_session(function(ok, _state, err)
     if not ok then
       notify_error("opencode new session failed: " .. tostring(err))
     end
   end)
+end
+
+function M.show_sessions()
+  server.list_sessions(function(ok, sessions, err)
+    vim.schedule(function()
+      if not ok then
+        notify_error("opencode list sessions failed: " .. tostring(err))
+        return
+      end
+      local current = server.state().session_id
+      local items = {}
+      for _, session in ipairs(sessions or {}) do
+        local label = session.id
+        if session.title and session.title ~= session.id then
+          label = session.title .. " (" .. session.id .. ")"
+        end
+        table.insert(items, {
+          label = label,
+          selected = session.id == current,
+          value = session.id,
+        })
+      end
+      picker.show({
+        title = "opencode sessions",
+        items = items,
+        on_select = function(item)
+          M.select_session(item.value)
+        end,
+      })
+    end)
+  end)
+end
+
+function M.select_session(session_id)
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
+  server.select_session(session_id, function(ok, history, err)
+    vim.schedule(function()
+      if not ok then
+        notify_error("opencode select session failed: " .. tostring(err))
+        return
+      end
+      local messages = require("opencode_chat.client").to_chat_messages(history)
+      if #messages == 0 then
+        messages = { { role = "System", text = "Session selected: " .. tostring(session_id) } }
+      end
+      ui.set_messages(messages)
+    end)
+  end)
+end
+
+function M.show_models()
+  local current = config.current_model()
+  local items = {}
+  for _, model in ipairs(config.models()) do
+    table.insert(items, {
+      group = model.providerID,
+      label = model.modelID,
+      selected = model.providerID == current.providerID and model.modelID == current.modelID,
+      value = model,
+    })
+  end
+  picker.show({
+    title = "opencode models",
+    items = items,
+    on_select = function(item)
+      M.select_model(item.value.providerID, item.value.modelID)
+    end,
+  })
+end
+
+function M.select_model(provider_id, model_id)
+  local ok, result = config.select_model(provider_id, model_id)
+  if not ok then
+    notify_error(result)
+    return false
+  end
+  ui.add_message("System", "Model selected: " .. result.providerID .. "/" .. result.modelID .. " (variant: " .. result.variant .. ")")
+  return true
+end
+
+function M.show_variants()
+  local current = config.current_model()
+  local items = {}
+  for _, variant in ipairs(config.variants(current.providerID)) do
+    table.insert(items, {
+      label = variant,
+      selected = variant == current.variant,
+      value = variant,
+    })
+  end
+  picker.show({
+    title = current.providerID .. " variants",
+    items = items,
+    on_select = function(item)
+      M.select_variant(item.value)
+    end,
+  })
+end
+
+function M.select_variant(variant)
+  local ok, result = config.select_variant(variant)
+  if not ok then
+    notify_error(result)
+    return false
+  end
+  ui.add_message("System", "Variant selected: " .. result.variant)
+  return true
 end
 
 function M.stop()

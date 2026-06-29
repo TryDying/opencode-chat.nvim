@@ -153,7 +153,10 @@ end
 
 local function model_object(model)
   if type(model) == "table" then
-    return model
+    return {
+      providerID = model.providerID,
+      modelID = model.modelID or model.id,
+    }
   end
   if type(model) ~= "string" or model == "" then
     return nil
@@ -171,8 +174,9 @@ local function session_model(model, variant)
     value.id = value.modelID
     value.modelID = nil
   end
-  if value and variant and variant ~= "" then
-    value.variant = variant
+  local model_variant = variant or (type(model) == "table" and model.variant)
+  if value and model_variant and model_variant ~= "" then
+    value.variant = model_variant
   end
   return value
 end
@@ -233,7 +237,7 @@ function M.create_session(directory, opts, cb)
     payload.agent = opts.agent
   end
   if opts.model then
-    payload.model = session_model(opts.model, opts.variant)
+    payload.model = session_model(opts.model)
   end
 
   return post_json(M.session_url(opts), payload, function(ok, data, result)
@@ -261,6 +265,8 @@ function M.send_message(session_id, text, opts, cb)
   end
   if opts.variant then
     payload.variant = opts.variant
+  elseif type(opts.model) == "table" and opts.model.variant then
+    payload.variant = opts.model.variant
   end
   local function send_legacy()
     local legacy_payload = { prompt = { text = text } }
@@ -295,6 +301,38 @@ function M.send_message(session_id, text, opts, cb)
 
     return send_legacy()
   end)
+end
+
+function M.list_sessions(opts, cb)
+  return get_json(M.session_url(opts), cb)
+end
+
+function M.extract_message_role_text(message)
+  if type(message) ~= "table" then
+    return nil, ""
+  end
+  if message.info and message.info.role then
+    return message.info.role, text_from_parts(message.parts)
+  end
+  if message.message and message.message.role then
+    return message.message.role, message.message.text or ""
+  end
+  return nil, ""
+end
+
+function M.to_chat_messages(messages)
+  local out = {}
+  if type(messages) ~= "table" then
+    return out
+  end
+  for _, message in ipairs(messages) do
+    local role, text = M.extract_message_role_text(message)
+    if role and text ~= "" then
+      local label = role:sub(1, 1):upper() .. role:sub(2)
+      table.insert(out, { role = label, text = text })
+    end
+  end
+  return out
 end
 
 M._model_object = model_object

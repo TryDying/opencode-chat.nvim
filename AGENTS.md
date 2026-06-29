@@ -42,6 +42,7 @@ These routing rules are mandatory for this repository.
 
 - Use native Neovim buffers/floating windows for the MVP UI; do not add `vim-floaterm` support.
 - MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session`, and `POST /session/:sessionID/message`, with legacy `/api/session` fallback only for compatibility.
+- Model configuration uses provider-grouped allowlists: `model = "provider/model"`, `providers[provider].variants`, and `providers[provider].models[].default_variant`; do not use top-level `variant`.
 - `agent`, `model`, and `variant` must be included in current `/session/:sessionID/message` payloads; session creation uses model `{ providerID, id, variant }`, while messages use `{ providerID, modelID }` plus top-level `agent`/`variant`.
 - Cancellation must call `POST /session/:sessionID/abort`; do not represent local curl/loop termination as backend cancellation.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
@@ -62,7 +63,7 @@ These routing rules are mandatory for this repository.
 
 ## Explicit non-goals for the MVP
 
-- Do not implement file tree, multi-session picker, prompt templates, or agent/mode management yet.
+- Do not implement file tree, prompt templates, or agent/mode management yet.
 - Do not add a floaterm backend.
 
 ## Validation focus
@@ -71,6 +72,7 @@ These routing rules are mandatory for this repository.
 - Manually verify message/input pane keyboard switching with `<Tab>`, auto-scroll to latest messages, and backend cancellation with `<C-c>` or `:OpencodeCancel`.
 - Manually verify `:OpencodeEdit` operates on sandbox/test files unless intentionally targeting a real file; opencode backend is expected to perform edits.
 - Manually verify that hide/show toggle does not create a new opencode server/session in the same Neovim process.
+- Manually verify `<leader>Xl`, `<leader>Xn`, `<leader>Xm`, and `<leader>Xv`, including mouse clicks on the Chat UI action row.
 - Manually verify that reversed Visual selections still produce ascending line ranges.
 
 ## Documentation maintenance rules

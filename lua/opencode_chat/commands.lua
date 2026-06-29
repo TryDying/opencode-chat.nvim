@@ -29,6 +29,18 @@ function M.setup(api)
     api.new_session()
   end, { force = true })
 
+  vim.api.nvim_create_user_command("OpencodeSessions", function()
+    api.show_sessions()
+  end, { force = true })
+
+  vim.api.nvim_create_user_command("OpencodeModels", function()
+    api.show_models()
+  end, { force = true })
+
+  vim.api.nvim_create_user_command("OpencodeVariants", function()
+    api.show_variants()
+  end, { force = true })
+
   vim.api.nvim_create_user_command("OpencodeStop", function()
     api.stop()
   end, { force = true })

@@ -9,10 +9,12 @@
 - Chat 输入区按 `<C-s>` 提交。
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
+- Chat UI 顶部可点击 `[Sessions] [New Session] [Model] [Variant]`。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
-- `:OpencodeNewSession` 停止当前 server 并创建新 session。
+- `:OpencodeSessions` / `<leader>Xl` 选择 session，`:OpencodeNewSession` / `<leader>Xn` 新建 session 且不重启 server。
+- `:OpencodeModels` / `<leader>Xm` 选择白名单模型，`:OpencodeVariants` / `<leader>Xv` 按当前 provider 选择 variant。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
 ## 配置示例
@@ -21,7 +23,15 @@
 require("opencode_chat").setup({
   agent = "quick",
   model = "deepseek/deepseek-v4-flash",
-  variant = "low",
+  providers = {
+    deepseek = {
+      variants = { "low", "medium", "high", "max" },
+      models = {
+        { id = "deepseek-v4-flash", default_variant = "low" },
+        { id = "deepseek-v4-pro", default_variant = "high" },
+      },
+    },
+  },
 })
 
 vim.keymap.set("n", "<M-->", function()
@@ -33,12 +43,13 @@ vim.keymap.set("v", "<M-->", function()
 end, { desc = "Append selection to opencode" })
 ```
 
-这些配置会发送给 opencode：创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
+`model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
 
 默认会绑定：
 
 - Normal `<M-->`：toggle Chat UI
 - Visual `<M-->`：追加选区上下文
+- Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xm` / `<leader>Xv`：选择 session、新建 session、选择 model、选择 variant
 
 ## 验证
 

@@ -9,9 +9,10 @@ import sys
 import time
 
 
-SESSION_ID = "test-session"
-MESSAGES = []
-ABORTED = False
+SESSION_COUNTER = 0
+SESSIONS = []
+MESSAGES = {}
+ABORTED = {}
 
 
 def text_part(message_id, text):
@@ -29,31 +30,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/project":
             self._json([{"id": "test-project", "worktree": os.getcwd()}])
             return
-        if self.path == f"/session/{SESSION_ID}/message":
-            self._json(MESSAGES)
+        if self.path == "/session":
+            self._json(SESSIONS)
             return
-        if self.path == f"/project/test-project/session/{SESSION_ID}/message":
-            self._json(MESSAGES)
+        match = re.match(r"^/session/([^/]+)/message$", self.path)
+        if match:
+            self._json(MESSAGES.get(match.group(1), []))
+            return
+        match = re.match(r"^/project/test-project/session/([^/]+)/message$", self.path)
+        if match:
+            self._json(MESSAGES.get(match.group(1), []))
             return
         self._text("not found", 404)
 
     def do_POST(self):
-        global MESSAGES, ABORTED
+        global SESSION_COUNTER, SESSIONS, MESSAGES, ABORTED
         length = int(self.headers.get("content-length", "0"))
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body) if body else {}
 
         if self.path == "/session":
-            ABORTED = False
+            SESSION_COUNTER += 1
+            session_id = f"test-session-{SESSION_COUNTER}"
+            ABORTED[session_id] = False
+            session = {"id": session_id, "title": data.get("title") or session_id}
+            SESSIONS.append(session)
+            MESSAGES.setdefault(session_id, [])
             self._record_session(data)
-            self._json({"id": SESSION_ID, "title": data.get("title")})
+            self._json(session)
             return
 
         if self.path == "/api/session":
             self._json({"id": SESSION_ID, "directory": data.get("directory")})
             return
 
-        if self.path == f"/session/{SESSION_ID}/message":
+        match = re.match(r"^/session/([^/]+)/message$", self.path)
+        if match:
+            session_id = match.group(1)
             if not data.get("model") or not data.get("agent") or not data.get("variant"):
                 self._record_prompt(data)
                 self._json([])
@@ -62,7 +75,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._record_prompt(data)
             if "slow response" in text:
                 time.sleep(5)
-                if ABORTED:
+                if ABORTED.get(session_id):
                     self._text("aborted", 499)
                     return
             user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
@@ -78,14 +91,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 reply_text = "fake reply: " + text
             assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", reply_text)]}
-            MESSAGES = [user, assistant]
+            MESSAGES[session_id] = [user, assistant]
             self._json(assistant)
             return
 
-        if self.path == f"/session/{SESSION_ID}/abort":
-            ABORTED = True
+        match = re.match(r"^/session/([^/]+)/abort$", self.path)
+        if match:
+            session_id = match.group(1)
+            ABORTED[session_id] = True
             with open(os.path.join(os.getcwd(), ".opencode-chat-abort.jsonl"), "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sessionID": SESSION_ID}, ensure_ascii=False) + "\n")
+                f.write(json.dumps({"sessionID": session_id}, ensure_ascii=False) + "\n")
             self._json({"ok": True})
             return
 
@@ -94,7 +109,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._record_prompt(data)
             user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
             assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", "fake reply: " + text)]}
-            MESSAGES = [user, assistant]
+            MESSAGES["legacy"] = [user, assistant]
             self._json(user)
             return
 

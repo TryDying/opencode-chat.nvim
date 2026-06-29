@@ -30,8 +30,10 @@ assert_eq(vim.env.VIM_PROFILE, "basic", "tests must run with VIM_PROFILE=basic")
 local root = require("opencode_chat.root")
 local port = require("opencode_chat.port")
 local client = require("opencode_chat.client")
+local config = require("opencode_chat.config")
 local context = require("opencode_chat.context")
 local opencode = require("opencode_chat")
+local picker = require("opencode_chat.picker")
 local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
 
@@ -63,15 +65,34 @@ opencode.setup({
   response_timeout_ms = 3000,
   agent = "quick",
   model = "deepseek/deepseek-v4-flash",
-  variant = "low",
+  providers = {
+    deepseek = {
+      variants = { "low", "medium", "high", "max" },
+      models = {
+        { id = "deepseek-v4-flash", default_variant = "low" },
+        { id = "deepseek-v4-pro", default_variant = "high" },
+      },
+    },
+  },
 })
 
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
 assert_true(vim.fn.exists(":OpencodeAsk") == 2, "ask command should be registered")
 assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registered")
 assert_true(vim.fn.exists(":OpencodeCancel") == 2, "cancel command should be registered")
+assert_true(vim.fn.exists(":OpencodeSessions") == 2, "sessions command should be registered")
+assert_true(vim.fn.exists(":OpencodeModels") == 2, "models command should be registered")
+assert_true(vim.fn.exists(":OpencodeVariants") == 2, "variants command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
 assert_true(vim.fn.maparg("<M-->", "v") ~= "", "visual <M--> should be mapped")
+assert_true(vim.fn.maparg("<leader>Xl", "n") ~= "", "session list keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xn", "n") ~= "", "new session keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xm", "n") ~= "", "model picker keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xv", "n") ~= "", "variant picker keymap should be mapped")
+assert_true(not pcall(function()
+  config.setup({ variant = "low" })
+end), "top-level variant config should be rejected")
+assert_eq(config.current_model().modelID, "deepseek-v4-flash", "failed config setup should preserve current config")
 
 assert_eq(root.find(file), vim.fs.normalize(tmp), "root.find should detect .git root")
 assert_eq(root.relative(file, tmp), "src/example.lua", "root.relative should produce project-relative path")
@@ -113,7 +134,7 @@ opencode.submit()
 local prompt_file = tmp .. "/.opencode-chat-prompt.jsonl"
 local session_file = tmp .. "/.opencode-chat-session.jsonl"
 assert_true(wait_for(function()
-  return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session"
+  return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session-1"
 end, 5000), "submit should create session and send prompt to fake headless server")
 
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
@@ -147,6 +168,35 @@ assert_eq(vim.api.nvim_get_current_win(), msg_state.message_win, "message pane s
 ui.focus_input()
 assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
 
+opencode.show_models()
+local model_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
+assert_true(model_lines:match("deepseek") ~= nil, "model picker should group by provider")
+assert_true(model_lines:match("deepseek%-v4%-flash") ~= nil, "model picker should include flash")
+assert_true(model_lines:match("deepseek%-v4%-pro") ~= nil, "model picker should include pro")
+picker.close()
+assert_true(opencode.select_model("deepseek", "deepseek-v4-pro"), "configured model should be selectable")
+local selected_model = config.current_model()
+assert_eq(selected_model.modelID, "deepseek-v4-pro", "select_model should update current model")
+assert_eq(selected_model.variant, "high", "select_model should reset to model default variant")
+opencode.show_variants()
+local variant_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
+assert_true(variant_lines:match("max") ~= nil, "variant picker should use current provider variants")
+picker.close()
+assert_true(opencode.select_variant("max"), "configured variant should be selectable")
+assert_eq(config.current_model().variant, "max", "select_variant should update current variant")
+assert_true(not opencode.select_model("deepseek", "missing-model"), "unconfigured model should be rejected")
+
+opencode.ask("model switch")
+assert_true(wait_for(function()
+  local messages = ui.state().messages
+  return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("model switch") ~= nil
+end, 3000), "request after model switch should complete")
+lines = vim.fn.readfile(prompt_file)
+payload = vim.json.decode(lines[#lines])
+assert_eq(payload.model.providerID, "deepseek", "switched payload model should include providerID")
+assert_eq(payload.model.modelID, "deepseek-v4-pro", "switched payload should use selected model")
+assert_eq(payload.variant, "max", "switched payload should use selected variant")
+
 opencode.ask("slow response")
 assert_true(wait_for(function()
   return opencode._request.busy == true
@@ -173,12 +223,36 @@ opencode.toggle()
 opencode.toggle()
 assert_true(server.state().job_id == first_job, "UI toggle should not restart headless server/session")
 
+opencode.new_session()
+assert_true(wait_for(function()
+  return server.state().session_id == "test-session-2"
+end, 3000), "new_session should create another session")
+assert_eq(server.state().job_id, first_job, "new_session should not restart headless server")
+local session_lines = vim.fn.readfile(session_file)
+local newest_session_payload = vim.json.decode(session_lines[#session_lines])
+assert_eq(newest_session_payload.model.id, "deepseek-v4-pro", "new_session should use selected model")
+assert_eq(newest_session_payload.model.variant, "max", "new_session should use selected variant")
+
+opencode.show_sessions()
+assert_true(wait_for(function()
+  return picker.state().buf and vim.api.nvim_buf_is_valid(picker.state().buf)
+end, 1000), "session picker should open")
+local session_picker_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
+assert_true(session_picker_lines:match("test%-session%-1") ~= nil, "session picker should include first session")
+assert_true(session_picker_lines:match("test%-session%-2") ~= nil, "session picker should include latest session")
+picker.close()
+opencode.select_session("test-session-1")
+assert_true(wait_for(function()
+  local messages = ui.state().messages
+  return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("model switch") ~= nil
+end, 3000), "select_session should switch back and render history")
+
 opencode.edit("make add subtract instead")
 assert_true(wait_for(function()
   local messages = ui.state().messages
   return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("a %- b") ~= nil
 end, 5000), "edit should render backend edit summary")
-assert_true(#vim.fn.readfile(session_file) >= 2, "request after cancel should create a new session")
+assert_true(#vim.fn.readfile(session_file) >= 2, "cancel and explicit new session should create fresh sessions")
 local updated = table.concat(vim.fn.readfile(file), "\n")
 assert_true(updated:match("return a %- b") ~= nil, "backend edit should update sandbox file")
 

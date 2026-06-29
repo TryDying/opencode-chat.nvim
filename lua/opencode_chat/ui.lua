@@ -10,6 +10,8 @@ local state = {
   messages = {},
   context = {},
   context_root = nil,
+  action_line = 3,
+  actions = {},
 }
 
 local function valid_win(win_id)
@@ -46,6 +48,9 @@ local function ensure_buffers()
     vim.keymap.set("n", "<C-c>", function()
       require("opencode_chat").cancel()
     end, { buffer = state.message_buf, silent = true, desc = "Cancel opencode request" })
+    vim.keymap.set("n", "<LeftMouse>", function()
+      require("opencode_chat.ui").click_action()
+    end, { buffer = state.message_buf, silent = true, desc = "opencode chat action" })
   end
   if not valid_buf(state.input_buf) then
     state.input_buf = vim.api.nvim_create_buf(false, true)
@@ -112,6 +117,16 @@ function M.render()
   end
 
   local lines = { "# opencode-chat.nvim", "" }
+  local action_text = "[Sessions] [New Session] [Model] [Variant]"
+  state.action_line = #lines + 1
+  state.actions = {
+    { label = "Sessions", start_col = 1, end_col = 10, action = "sessions" },
+    { label = "New Session", start_col = 12, end_col = 24, action = "new_session" },
+    { label = "Model", start_col = 26, end_col = 32, action = "model" },
+    { label = "Variant", start_col = 34, end_col = 42, action = "variant" },
+  }
+  table.insert(lines, action_text)
+  table.insert(lines, "")
   if #state.context > 0 then
     table.insert(lines, "## Context")
     for _, item in ipairs(state.context) do
@@ -145,6 +160,28 @@ function M.render()
     pcall(vim.api.nvim_win_call, state.message_win, function()
       vim.cmd("normal! zb")
     end)
+  end
+end
+
+function M.click_action()
+  local pos = vim.fn.getmousepos()
+  if pos.winid ~= state.message_win or pos.line ~= state.action_line then
+    return
+  end
+  for _, action in ipairs(state.actions) do
+    if pos.column >= action.start_col and pos.column <= action.end_col then
+      local api = require("opencode_chat")
+      if action.action == "sessions" then
+        api.show_sessions()
+      elseif action.action == "new_session" then
+        api.new_session()
+      elseif action.action == "model" then
+        api.show_models()
+      elseif action.action == "variant" then
+        api.show_variants()
+      end
+      return
+    end
   end
 end
 
@@ -264,6 +301,11 @@ function M.clear()
   state.context_root = nil
   M.render()
   M.clear_input()
+end
+
+function M.set_messages(messages)
+  state.messages = messages or {}
+  M.show()
 end
 
 function M.close()
