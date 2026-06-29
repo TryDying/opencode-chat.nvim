@@ -3,15 +3,21 @@ local config = require("opencode_chat.config")
 local M = {}
 
 local state = {
+  toolbar_win = nil,
   message_win = nil,
+  status_win = nil,
   input_win = nil,
+  toolbar_buf = nil,
   message_buf = nil,
+  status_buf = nil,
   input_buf = nil,
   messages = {},
   context = {},
   context_root = nil,
-  action_line = 3,
   actions = {},
+  status = "Idle",
+  spinner = nil,
+  spinner_index = 1,
 }
 
 local function valid_win(win_id)
@@ -25,19 +31,29 @@ end
 local function layout()
   local cfg = config.get().ui
   local total_width = math.floor(vim.o.columns * cfg.width)
-  local total_height = math.floor((vim.o.lines - vim.o.cmdheight) * cfg.height)
   local input_height = cfg.input_height
-  local message_height = total_height - input_height - 2
-  local row = math.max(math.floor((vim.o.lines - total_height) / 2) - 1, 0)
-  local col = math.max(math.floor((vim.o.columns - total_width) / 2), 0)
-  return cfg, total_width, message_height, input_height, row, col
+  return cfg, math.max(total_width, 32), input_height
+end
+
+local function set_buf_options(buf, filetype)
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = filetype or ""
 end
 
 local function ensure_buffers()
+  if not valid_buf(state.toolbar_buf) then
+    state.toolbar_buf = vim.api.nvim_create_buf(false, true)
+    set_buf_options(state.toolbar_buf, "opencode-toolbar")
+    vim.bo[state.toolbar_buf].modifiable = false
+    vim.keymap.set("n", "<LeftMouse>", function()
+      require("opencode_chat.ui").click_action()
+    end, { buffer = state.toolbar_buf, silent = true, desc = "opencode chat action" })
+  end
   if not valid_buf(state.message_buf) then
     state.message_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[state.message_buf].bufhidden = "hide"
-    vim.bo[state.message_buf].filetype = "markdown"
+    set_buf_options(state.message_buf, "markdown")
     vim.bo[state.message_buf].modifiable = false
     vim.keymap.set("n", "<Tab>", function()
       require("opencode_chat.ui").focus_input()
@@ -48,15 +64,16 @@ local function ensure_buffers()
     vim.keymap.set("n", "<C-c>", function()
       require("opencode_chat").cancel()
     end, { buffer = state.message_buf, silent = true, desc = "Cancel opencode request" })
-    vim.keymap.set("n", "<LeftMouse>", function()
-      require("opencode_chat.ui").click_action()
-    end, { buffer = state.message_buf, silent = true, desc = "opencode chat action" })
+  end
+  if not valid_buf(state.status_buf) then
+    state.status_buf = vim.api.nvim_create_buf(false, true)
+    set_buf_options(state.status_buf, "opencode-status")
+    vim.bo[state.status_buf].modifiable = false
   end
   if not valid_buf(state.input_buf) then
     state.input_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[state.input_buf].bufhidden = "hide"
+    set_buf_options(state.input_buf, "markdown")
     vim.bo[state.input_buf].filetype = "markdown"
-    vim.bo[state.input_buf].buftype = "acwrite"
     vim.keymap.set("n", "<C-s>", function()
       require("opencode_chat").submit()
     end, { buffer = state.input_buf, silent = true, desc = "Submit opencode prompt" })
@@ -80,31 +97,63 @@ end
 
 local function open_windows()
   ensure_buffers()
-  local cfg, width, message_height, input_height, row, col = layout()
-  if not valid_win(state.message_win) then
-    state.message_win = vim.api.nvim_open_win(state.message_buf, true, {
-      relative = "editor",
-      width = width,
-      height = message_height,
-      row = row,
-      col = col,
-      border = cfg.border,
-      title = cfg.title,
-      style = "minimal",
-    })
+  if valid_win(state.toolbar_win) and valid_win(state.message_win) and valid_win(state.status_win) and valid_win(state.input_win) then
+    return
   end
-  if not valid_win(state.input_win) then
-    state.input_win = vim.api.nvim_open_win(state.input_buf, true, {
-      relative = "editor",
-      width = width,
-      height = input_height,
-      row = row + message_height + 2,
-      col = col,
-      border = cfg.border,
-      title = cfg.input_title,
-      style = "minimal",
-    })
+
+  local _cfg, width, input_height = layout()
+  local previous = vim.api.nvim_get_current_win()
+  local old_winminheight = vim.o.winminheight
+  local old_equalalways = vim.o.equalalways
+  vim.o.winminheight = 0
+  vim.o.equalalways = false
+  vim.cmd("botright vertical " .. width .. "new")
+  state.message_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.message_win, state.message_buf)
+  vim.wo[state.message_win].winfixwidth = true
+  vim.wo[state.message_win].number = false
+  vim.wo[state.message_win].relativenumber = false
+  vim.wo[state.message_win].wrap = true
+
+  vim.cmd("aboveleft 1split")
+  state.toolbar_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.toolbar_win, state.toolbar_buf)
+  vim.wo[state.toolbar_win].winfixwidth = true
+  vim.wo[state.toolbar_win].winfixheight = true
+  vim.wo[state.toolbar_win].number = false
+  vim.wo[state.toolbar_win].relativenumber = false
+  vim.api.nvim_win_set_height(state.toolbar_win, 1)
+
+  vim.api.nvim_set_current_win(state.message_win)
+  vim.cmd("belowright " .. input_height .. "split")
+  state.input_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.input_win, state.input_buf)
+  vim.wo[state.input_win].winfixheight = true
+  vim.wo[state.input_win].number = false
+  vim.wo[state.input_win].relativenumber = false
+  vim.api.nvim_win_set_height(state.input_win, input_height)
+
+  vim.api.nvim_set_current_win(state.message_win)
+  vim.cmd("belowright 1split")
+  state.status_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.status_win, state.status_buf)
+  vim.wo[state.status_win].winfixheight = true
+  vim.wo[state.status_win].number = false
+  vim.wo[state.status_win].relativenumber = false
+  vim.api.nvim_win_set_height(state.status_win, 1)
+
+  vim.o.winminheight = old_winminheight
+  vim.o.equalalways = old_equalalways
+
+  if valid_win(previous) then
+    pcall(vim.api.nvim_set_current_win, previous)
   end
+end
+
+local function set_lines(buf, lines)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
 end
 
 function M.state()
@@ -116,17 +165,10 @@ function M.render()
     return
   end
 
+  M.render_toolbar()
+  M.render_status()
+
   local lines = { "# opencode-chat.nvim", "" }
-  local action_text = "[Sessions] [New Session] [Model] [Variant]"
-  state.action_line = #lines + 1
-  state.actions = {
-    { label = "Sessions", start_col = 1, end_col = 10, action = "sessions" },
-    { label = "New Session", start_col = 12, end_col = 24, action = "new_session" },
-    { label = "Model", start_col = 26, end_col = 32, action = "model" },
-    { label = "Variant", start_col = 34, end_col = 42, action = "variant" },
-  }
-  table.insert(lines, action_text)
-  table.insert(lines, "")
   if #state.context > 0 then
     table.insert(lines, "## Context")
     for _, item in ipairs(state.context) do
@@ -150,9 +192,7 @@ function M.render()
     end
   end
 
-  vim.bo[state.message_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(state.message_buf, 0, -1, false, lines)
-  vim.bo[state.message_buf].modifiable = false
+  set_lines(state.message_buf, lines)
 
   if valid_win(state.message_win) then
     local last = math.max(vim.api.nvim_buf_line_count(state.message_buf), 1)
@@ -163,9 +203,31 @@ function M.render()
   end
 end
 
+function M.render_toolbar()
+  if not valid_buf(state.toolbar_buf) then
+    return
+  end
+  state.actions = {
+    { label = "Sessions", start_col = 1, end_col = 12, action = "sessions" },
+    { label = "New", start_col = 14, end_col = 20, action = "new_session" },
+    { label = "Model", start_col = 22, end_col = 30, action = "model" },
+    { label = "Variant", start_col = 32, end_col = 42, action = "variant" },
+  }
+  set_lines(state.toolbar_buf, { "[ Sessions ] [ New ] [ Model ] [ Variant ]" })
+end
+
+function M.render_status()
+  if not valid_buf(state.status_buf) then
+    return
+  end
+  local model = config.current_model()
+  local line = string.format(" %s | %s/%s | %s ", state.status or "Idle", model.providerID or "?", model.modelID or "?", model.variant or "?")
+  set_lines(state.status_buf, { line })
+end
+
 function M.click_action()
   local pos = vim.fn.getmousepos()
-  if pos.winid ~= state.message_win or pos.line ~= state.action_line then
+  if pos.winid ~= state.toolbar_win then
     return
   end
   for _, action in ipairs(state.actions) do
@@ -199,6 +261,11 @@ function M.show(opts)
   return state
 end
 
+function M.set_status(text)
+  state.status = text or "Idle"
+  M.render_status()
+end
+
 function M.focus_messages()
   open_windows()
   M.render()
@@ -217,13 +284,21 @@ function M.hide()
   pcall(function()
     require("opencode_chat.picker").close()
   end)
+  if valid_win(state.toolbar_win) then
+    vim.api.nvim_win_close(state.toolbar_win, true)
+  end
   if valid_win(state.message_win) then
     vim.api.nvim_win_close(state.message_win, true)
+  end
+  if valid_win(state.status_win) then
+    vim.api.nvim_win_close(state.status_win, true)
   end
   if valid_win(state.input_win) then
     vim.api.nvim_win_close(state.input_win, true)
   end
+  state.toolbar_win = nil
   state.message_win = nil
+  state.status_win = nil
   state.input_win = nil
 end
 
@@ -282,6 +357,16 @@ function M.replace_last_if(role, old_text, new_role, new_text)
   M.render()
 end
 
+function M.update_last(role, text)
+  local messages = state.messages
+  if messages[#messages] and messages[#messages].role == role then
+    messages[#messages].text = text
+  else
+    table.insert(messages, { role = role, text = text })
+  end
+  M.render()
+end
+
 function M.mark_cancelling()
   local messages = state.messages
   local last = messages[#messages]
@@ -324,13 +409,21 @@ end
 
 function M.close()
   M.hide()
+  if valid_buf(state.toolbar_buf) then
+    vim.api.nvim_buf_delete(state.toolbar_buf, { force = true })
+  end
   if valid_buf(state.message_buf) then
     vim.api.nvim_buf_delete(state.message_buf, { force = true })
+  end
+  if valid_buf(state.status_buf) then
+    vim.api.nvim_buf_delete(state.status_buf, { force = true })
   end
   if valid_buf(state.input_buf) then
     vim.api.nvim_buf_delete(state.input_buf, { force = true })
   end
+  state.toolbar_buf = nil
   state.message_buf = nil
+  state.status_buf = nil
   state.input_buf = nil
 end
 

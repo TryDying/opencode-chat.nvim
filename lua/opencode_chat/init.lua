@@ -11,11 +11,40 @@ local request = {
   cancelling = false,
   id = 0,
 }
+local spinner = {
+  timer = nil,
+  index = 1,
+  frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+}
 
 local function notify_error(message)
   vim.schedule(function()
     vim.notify(message, vim.log.levels.ERROR)
   end)
+end
+
+local function stop_spinner(status)
+  if spinner.timer then
+    spinner.timer:stop()
+    spinner.timer:close()
+    spinner.timer = nil
+  end
+  ui.set_status(status or "Idle")
+end
+
+local function start_spinner(label)
+  stop_spinner(label)
+  spinner.index = 1
+  spinner.timer = vim.loop.new_timer()
+  spinner.timer:start(0, 120, vim.schedule_wrap(function()
+    if not request.busy then
+      stop_spinner("Idle")
+      return
+    end
+    local frame = spinner.frames[spinner.index]
+    spinner.index = (spinner.index % #spinner.frames) + 1
+    ui.set_status((label or "Thinking") .. " " .. frame)
+  end))
 end
 
 local function build_prompt(text)
@@ -97,6 +126,8 @@ function M.ask(text)
   local request_id = request.id
   ui.add_message("User", prompt)
   ui.add_message("Assistant", "Thinking...")
+  start_spinner("Thinking")
+  local streamed = false
 
   server.send(prompt, project_root, function(ok, reply, err)
     vim.schedule(function()
@@ -104,13 +135,29 @@ function M.ask(text)
         return
       end
       request.busy = false
+      stop_spinner(ok and "Idle" or "Error")
       if ok then
-        ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
+        if streamed then
+          ui.update_last("Assistant", reply ~= "" and reply or "(empty response)")
+        else
+          ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
+        end
       else
         ui.replace_last_if("Assistant", "Thinking...", "Error", tostring(err or "opencode request failed"))
       end
     end)
-  end)
+  end, {
+    on_delta = function(text)
+      streamed = true
+      vim.schedule(function()
+        if request_id == request.id then
+          stop_spinner("Streaming")
+          ui.update_last("Assistant", text)
+          ui.set_status("Streaming")
+        end
+      end)
+    end,
+  })
 end
 
 function M.cancel()
@@ -125,10 +172,12 @@ function M.cancel()
   request.id = request.id + 1
   request.cancelling = true
   ui.mark_cancelling()
+  stop_spinner("Cancelling")
   server.cancel(function(ok, message)
     vim.schedule(function()
       request.busy = false
       request.cancelling = false
+      ui.set_status(ok and "Cancelled" or "Error")
       if ok then
         ui.replace_last_if("System", "Cancelling...", "Cancelled", "Cancelled by opencode.")
       else
@@ -172,19 +221,31 @@ function M.edit(instruction)
   request.busy = true
   request.id = request.id + 1
   local request_id = request.id
+  start_spinner("Editing")
   server.send(prompt, project_root, function(ok, reply, err)
     vim.schedule(function()
       if request_id ~= request.id then
         return
       end
       request.busy = false
+      stop_spinner(ok and "Idle" or "Error")
       if not ok then
         ui.replace_last_if("Assistant", "Editing...", "Error", tostring(err or "opencode edit failed"))
         return
       end
-      ui.replace_last_if("Assistant", "Editing...", "Assistant", reply ~= "" and reply or "(edit completed)")
+      ui.update_last("Assistant", reply ~= "" and reply or "(edit completed)")
     end)
-  end)
+  end, {
+    on_delta = function(text)
+      vim.schedule(function()
+        if request_id == request.id then
+          stop_spinner("Streaming")
+          ui.update_last("Assistant", text)
+          ui.set_status("Streaming")
+        end
+      end)
+    end,
+  })
 end
 
 function M.new_session()
@@ -314,6 +375,7 @@ function M.stop()
   request.busy = false
   request.cancelling = false
   request.id = request.id + 1
+  stop_spinner("Idle")
   server.stop()
   ui.close()
 end

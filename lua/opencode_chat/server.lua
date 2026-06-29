@@ -138,15 +138,46 @@ function M.ensure_started(startpath, cb)
   end)
 end
 
-function M.send(text, startpath, cb)
+local function text_from_event(event)
+  if type(event) ~= "table" or event.type ~= "message.part.updated" then
+    return ""
+  end
+  local part = event.properties and event.properties.part
+  if type(part) ~= "table" or part.type ~= "text" then
+    return ""
+  end
+  return part.text or ""
+end
+
+function M.send(text, startpath, cb, events)
   local cfg = config.get()
   M.ensure_started(startpath, function(ok, current, err)
     if not ok then
       cb(false, nil, err)
       return
     end
+    if vim.in_fast_event() then
+      vim.schedule(function()
+        M.send(text, startpath, cb, events)
+      end)
+      return
+    end
     local model = config.current_model()
-    active = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
+    local stream = client.subscribe_events({ host = cfg.host, port = current.port }, function(event)
+      local delta = text_from_event(event)
+      if delta ~= "" and events and events.on_delta then
+        events.on_delta(delta)
+      end
+    end)
+    local send_handle
+    local function cancel_stream()
+      if stream then
+        stream.cancel()
+        stream = nil
+      end
+    end
+    send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
+      cancel_stream()
       active = nil
       if not sent then
         cb(false, nil, client.format_error(result, "prompt failed"))
@@ -167,6 +198,18 @@ function M.send(text, startpath, cb)
         cb(false, nil, client.format_error(history_result, "assistant response not found"))
       end)
     end)
+    active = {
+      cancel = function()
+        cancel_stream()
+        if send_handle and send_handle.kill then
+          pcall(function()
+            send_handle:kill(15)
+          end)
+        elseif send_handle and send_handle.cancel then
+          send_handle.cancel()
+        end
+      end
+    }
   end)
 end
 

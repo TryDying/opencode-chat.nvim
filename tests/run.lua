@@ -119,6 +119,7 @@ assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
 assert_eq(client.project_sessions_url("project", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project/session", "project sessions URL should target project-scoped sessions")
+assert_eq(client.event_subscribe_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/event/subscribe", "event subscribe URL should target SSE endpoint")
 assert_eq(client.extract_assistant_text({
   { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
   { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
@@ -128,6 +129,10 @@ assert_eq(client.format_error({ status = 400, body = "bad request", stderr = "" 
 opencode.append_file()
 assert_eq(ui.state().context[1].label, "@src/example.lua", "append_file should add structured context")
 assert_true(ui.state().context[1].text:match("return a %+ b") ~= nil, "context should include code text")
+assert_true(vim.api.nvim_win_is_valid(ui.state().toolbar_win), "toolbar window should exist")
+assert_true(vim.api.nvim_win_is_valid(ui.state().status_win), "status window should exist")
+assert_eq(vim.api.nvim_win_get_config(ui.state().message_win).relative, "", "chat message pane should be a normal split, not a float")
+assert_true(vim.api.nvim_win_get_width(ui.state().message_win) <= math.ceil(vim.o.columns * 0.45), "chat panel should use the right-side configured width")
 
 ui.set_input("这是啥")
 opencode.submit()

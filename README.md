@@ -1,15 +1,16 @@
 # opencode-chat.nvim
 
-轻量 Neovim 插件：用 Neovim 原生 floating buffers 实现 Chat UI，并通过 `opencode serve` 的本地 HTTP API 创建 session、发送 prompt，并让 opencode agent 执行文件修改。
+轻量 Neovim 插件：用 Neovim 右侧 Chat panel 集成 `opencode serve` 的本地 HTTP API，创建 session、发送 prompt，并让 opencode agent 执行文件修改。
 
 ## 功能
 
-- `:OpencodeToggle` 打开/隐藏原生 Chat UI。
+- `:OpencodeToggle` 打开/隐藏右侧 Chat panel，默认占编辑器宽度 40%。
 - `:OpencodeAsk [prompt]` 发送问题；不带参数时打开输入区。
 - Chat 输入区按 `<C-s>` 提交。
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
-- Chat UI 顶部可点击 `[Sessions] [New Session] [Model] [Variant]`。
+- Chat UI 顶部固定 toolbar，可点击 `[ Sessions ] [ New ] [ Model ] [ Variant ]`。
+- Chat UI 底部固定 status bar，显示 Idle/Thinking/Streaming/Error 等状态和当前 model/variant。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
@@ -49,6 +50,8 @@ end, { desc = "Append selection to opencode" })
 ```
 
 `model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
+
+如果当前 opencode server 支持 `/event/subscribe` SSE 事件流，插件会尝试根据 `message.part.updated` 增量刷新 assistant 回复；不可用时自动退回非流式响应。
 
 默认会绑定：
 

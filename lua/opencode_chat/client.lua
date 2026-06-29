@@ -17,6 +17,10 @@ function M.doc_url(opts)
   return url("/doc", opts)
 end
 
+function M.event_subscribe_url(opts)
+  return url("/event/subscribe", opts)
+end
+
 function M.session_url(opts)
   return url("/session", opts)
 end
@@ -64,6 +68,35 @@ function M.run(args, cb)
     cb({ code = code, stdout = result, stderr = code == 0 and "" or result })
   end
   return nil
+end
+
+function M.subscribe_events(opts, on_event)
+  opts = opts or {}
+  local job_id = vim.fn.jobstart({ "curl", "-sS", "-N", M.event_subscribe_url(opts) }, {
+    stdout_buffered = false,
+    stderr_buffered = false,
+    on_stdout = function(_, data)
+      for _, line in ipairs(data or {}) do
+        local payload = line:match("^data:%s*(.+)$")
+        if payload and payload ~= "" then
+          local ok, event = pcall(vim.json.decode, payload)
+          if ok and type(event) == "table" and on_event then
+            on_event(event)
+          end
+        end
+      end
+    end,
+  })
+  if job_id <= 0 then
+    return nil
+  end
+  return {
+    cancel = function()
+      pcall(function()
+        vim.fn.jobstop(job_id)
+      end)
+    end,
+  }
 end
 
 local function decode_json(text)
