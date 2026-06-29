@@ -107,3 +107,10 @@
 - 方案：session 列表优先使用 `/project/:projectID/session`，fallback `/session` 时按 `projectID` 或归一化 `directory` 过滤；picker 优先使用 `nui.menu`，Chat hide 时统一关闭 picker，消息区聚焦显式退出 insert。
 - 预防：测试必须模拟外部 project session 并断言被过滤，同时覆盖 hide 关闭 picker、message pane 不进入 insert 模式。
 - commitID：de6a8e9
+
+## 2026-06-29：主 Chat UI 更适合右侧 split panel
+
+- 问题：把 toolbar 放进滚动消息 buffer 会在消息变多后消失；floating 主界面容易遮挡编辑区，也难以固定 status/input 区域。
+- 方案：主 Chat UI 改为右侧 40% split panel，并拆成固定 toolbar、滚动 message、固定 status 和 input 窗口；请求中显示 Thinking/Streaming 状态，并尝试订阅 `/event/subscribe` SSE 增量刷新。
+- 预防：测试必须断言主消息区是普通 split 而非 float、toolbar/status window 存在、panel 宽度受配置约束，并保留 SSE 不可用时的非流式 fallback。
+- commitID：7731ccf
