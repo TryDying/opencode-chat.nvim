@@ -49,6 +49,8 @@ These routing rules are mandatory for this repository.
 - Session lists must be scoped to the current project/workspace: prefer `/project/:projectID/session`; if falling back to global `/session`, filter by `projectID` or normalized `directory`.
 - Hiding the Chat UI must close any open picker/menu, and focusing the message pane must not enter insert mode.
 - The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Streaming/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
+- Chat panel sizing must be configurable through `ui.width`, `ui.height`, and optional `ui.message_height`.
+- Toggle should reveal/focus first: if the panel is visible but unfocused, focus the input pane; only hide when focus is already inside the Chat panel.
 - Global keymaps must be user-configurable through `keymaps`; do not hard-code or register default global mappings. Recommended examples are `<leader>Xl`, `<leader>Xn`, `<leader>Xr`, `<leader>Xm`, and `<leader>Xt`.
 - Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.

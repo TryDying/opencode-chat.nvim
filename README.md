@@ -46,15 +46,13 @@ require("opencode_chat").setup({
     models = "<leader>Xm",
     variants = "<leader>Xt",
   },
+  ui = {
+    width = 0.4,
+    height = 1.0,
+    message_height = nil,
+    input_height = 5,
+  },
 })
-
-vim.keymap.set("n", "<M-->", function()
-  require("opencode_chat").toggle()
-end, { desc = "Toggle opencode" })
-
-vim.keymap.set("v", "<M-->", function()
-  require("opencode_chat").append_selection()
-end, { desc = "Append selection to opencode" })
 ```
 
 `model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
@@ -66,6 +64,8 @@ end, { desc = "Append selection to opencode" })
 - Normal `<M-->`：toggle Chat UI
 - Visual `<M-->`：追加选区上下文
 - Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xr` / `<leader>Xm` / `<leader>Xt`：选择 session、新建 session、重命名 session、选择 model、选择 variant
+
+`:OpencodeToggle` 在面板隐藏时打开 Chat；面板已打开但当前焦点不在 Chat 内时，会重新聚焦到 Chat 输入区；焦点已在 Chat 内时才隐藏面板。
 
 ## 验证
 

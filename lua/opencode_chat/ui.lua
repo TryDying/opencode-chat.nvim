@@ -28,8 +28,18 @@ end
 local function layout()
   local cfg = config.get().ui
   local total_width = math.floor(vim.o.columns * cfg.width)
+  local total_height = cfg.height and math.floor((vim.o.lines - vim.o.cmdheight) * cfg.height) or nil
   local input_height = cfg.input_height
-  return cfg, math.max(total_width, 32), input_height
+  return cfg, math.max(total_width, 32), input_height, total_height
+end
+
+local function set_panel_win_options(win)
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].foldcolumn = "0"
+  vim.wo[win].winbar = ""
+  vim.wo[win].statusline = ""
 end
 
 local function set_buf_options(buf, filetype)
@@ -90,7 +100,7 @@ local function open_windows()
     return
   end
 
-  local _cfg, width, input_height = layout()
+  local cfg, width, input_height, total_height = layout()
   local previous = vim.api.nvim_get_current_win()
   local old_winminheight = vim.o.winminheight
   local old_equalalways = vim.o.equalalways
@@ -100,21 +110,18 @@ local function open_windows()
   state.message_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.message_win, state.message_buf)
   vim.wo[state.message_win].winfixwidth = true
-  vim.wo[state.message_win].number = false
-  vim.wo[state.message_win].relativenumber = false
   vim.wo[state.message_win].wrap = true
-  vim.wo[state.message_win].statusline = " "
-  vim.wo[state.message_win].winbar = " "
+  set_panel_win_options(state.message_win)
+  if total_height and total_height > 0 and total_height < vim.api.nvim_win_get_height(state.message_win) then
+    vim.api.nvim_win_set_height(state.message_win, total_height)
+  end
 
   vim.api.nvim_set_current_win(state.message_win)
   vim.cmd("belowright " .. input_height .. "split")
   state.input_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.input_win, state.input_buf)
   vim.wo[state.input_win].winfixheight = true
-  vim.wo[state.input_win].number = false
-  vim.wo[state.input_win].relativenumber = false
-  vim.wo[state.input_win].statusline = " "
-  vim.wo[state.input_win].winbar = " "
+  set_panel_win_options(state.input_win)
   vim.api.nvim_win_set_height(state.input_win, input_height)
 
   vim.api.nvim_set_current_win(state.input_win)
@@ -122,11 +129,12 @@ local function open_windows()
   state.status_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(state.status_win, state.status_buf)
   vim.wo[state.status_win].winfixheight = true
-  vim.wo[state.status_win].number = false
-  vim.wo[state.status_win].relativenumber = false
-  vim.wo[state.status_win].statusline = " "
-  vim.wo[state.status_win].winbar = " "
+  set_panel_win_options(state.status_win)
   vim.api.nvim_win_set_height(state.status_win, 1)
+
+  if cfg.message_height and cfg.message_height > 0 and valid_win(state.message_win) then
+    pcall(vim.api.nvim_win_set_height, state.message_win, cfg.message_height)
+  end
 
   vim.o.winminheight = old_winminheight
   vim.o.equalalways = old_equalalways
@@ -250,7 +258,17 @@ end
 
 function M.toggle()
   if valid_win(state.message_win) or valid_win(state.input_win) then
-    M.hide()
+    local picker_state = require("opencode_chat.picker").state()
+    if picker_state.buf and vim.api.nvim_buf_is_valid(picker_state.buf) then
+      M.hide()
+      return state
+    end
+    local current = vim.api.nvim_get_current_win()
+    if current == state.message_win or current == state.input_win or current == state.status_win then
+      M.hide()
+    else
+      M.focus_input()
+    end
   else
     M.show()
   end

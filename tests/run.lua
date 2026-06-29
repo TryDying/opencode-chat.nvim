@@ -147,6 +147,12 @@ assert_eq(vim.api.nvim_win_get_config(ui.state().message_win).relative, "", "cha
 assert_true(vim.api.nvim_win_get_width(ui.state().message_win) <= math.ceil(vim.o.columns * 0.45), "chat panel should use the right-side configured width")
 assert_true(ui.state().toolbar_win == nil, "toolbar window should be removed")
 assert_true(vim.api.nvim_win_get_position(ui.state().status_win)[1] > vim.api.nvim_win_get_position(ui.state().input_win)[1], "status bar should be below input pane")
+assert_eq(vim.wo[ui.state().message_win].winbar, "", "message pane should not reserve a blank winbar line")
+assert_eq(vim.wo[ui.state().input_win].winbar, "", "input pane should not reserve a blank winbar line")
+assert_eq(vim.wo[ui.state().status_win].winbar, "", "status pane should not reserve a blank winbar line")
+assert_eq(config.get().ui.width, 0.4, "chat panel width should be configurable")
+assert_eq(config.get().ui.height, 1.0, "chat panel height should be configurable")
+assert_eq(config.get().ui.message_height, nil, "message pane height should be optionally configurable")
 
 ui.set_input("这是啥")
 opencode.submit()
@@ -242,6 +248,15 @@ end
 assert_eq(cancelled_count, 1, "single cancel should render exactly one Cancelled message")
 
 local first_job = server.state().job_id
+local edit_win = vim.fn.win_getid(vim.fn.winnr("#"))
+if edit_win == 0 or not vim.api.nvim_win_is_valid(edit_win) or edit_win == ui.state().input_win then
+  edit_win = vim.api.nvim_list_wins()[1]
+end
+if edit_win and vim.api.nvim_win_is_valid(edit_win) and edit_win ~= ui.state().input_win and edit_win ~= ui.state().message_win then
+  vim.api.nvim_set_current_win(edit_win)
+  opencode.toggle()
+  assert_eq(vim.api.nvim_get_current_win(), ui.state().input_win, "toggle should refocus opencode chat when panel is visible but unfocused")
+end
 opencode.toggle()
 opencode.toggle()
 assert_true(server.state().job_id == first_job, "UI toggle should not restart headless server/session")
