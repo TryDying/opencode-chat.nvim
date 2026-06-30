@@ -142,3 +142,10 @@
 - 方案：`visual_line_range` 在当前仍处于 Visual/Select 模式时优先读取 `getpos("v")` 与光标位置，仅非活动选区时回退到 `'<`/`'>`。
 - 预防：测试必须覆盖旧 marks 为 L3-L5、当前 active Visual 为 L8-L8 时，最终引用应为 L8-L8。
 - commitID：4d698e4
+
+## 2026-06-29：Context 追加应可去重、可删除且不抢焦点
+
+- 问题：上下文只能追加不能删除，重复追加会污染下一次 prompt；Visual 追加还会把焦点抢到 Chat，打断继续阅读/选择代码的流程。
+- 方案：新增统一 `append_context` 入口，Normal 追加当前文件、Visual 追加选区，并按引用去重且保持代码 pane 焦点；Context 区编号展示，支持按编号删除、清空和消息区 `d`/`D` 快捷操作。
+- 预防：测试必须覆盖 Normal/Visual `append_context` 焦点保持、重复追加去重、Context 单项删除和清空。
+- commitID：93b7b95
