@@ -184,3 +184,10 @@
 - 方案：`list_sessions` 先尝试兼容 `/session`，失败后请求 `/api/session`；fake server 改为让 `/session` 返回 404，只通过 `/api/session` 返回 wrapped `items`。
 - 预防：测试桩不能只模拟我们猜测的接口，涉及真实 opencode 路径时必须让错误旧路径失败，确保 fallback 覆盖真实 API。
 - commitID：be39383
+
+## 2026-06-29：当前 project 应优先来自 `/project/current`
+
+- 问题：从 `/project` 列表中按目录匹配失败时会退化为第一个 project，真实环境多 project 时可能选错 project id，导致 `/project/:id/session` 返回空并让 picker 显示 `(empty)`。
+- 方案：获取 project id 时优先请求 `GET /project/current`；仅不支持时回退到 `/project` 列表匹配，同时对 project/session id 做 URL 编码。
+- 预防：fake opencode 的 `/project` 列表必须包含一个错误首项，并通过 `/project/current` 返回正确 project，测试仍需保证 session picker 能显示当前 project sessions。
+- commitID：c4364cc
