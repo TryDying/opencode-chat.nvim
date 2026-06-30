@@ -9,6 +9,12 @@ local function url(path, opts)
   return string.format("http://%s:%s%s", host, port, path)
 end
 
+local function path_segment(value)
+  return tostring(value):gsub("([^%w%-%._~])", function(char)
+    return string.format("%%%02X", string.byte(char))
+  end)
+end
+
 function M.app_url(opts)
   return url("/app", opts)
 end
@@ -57,12 +63,16 @@ function M.project_url(opts)
   return url("/project", opts)
 end
 
+function M.current_project_url(opts)
+  return url("/project/current", opts)
+end
+
 function M.project_messages_url(project_id, session_id, opts)
-  return url("/project/" .. project_id .. "/session/" .. session_id .. "/message", opts)
+  return url("/project/" .. path_segment(project_id) .. "/session/" .. path_segment(session_id) .. "/message", opts)
 end
 
 function M.project_sessions_url(project_id, opts)
-  return url("/project/" .. project_id .. "/session", opts)
+  return url("/project/" .. path_segment(project_id) .. "/session", opts)
 end
 
 function M.run(args, cb)
@@ -286,6 +296,22 @@ function M.extract_assistant_text(messages)
 end
 
 function M.get_project_id(directory, opts, cb)
+  local function project_id_from(project)
+    return type(project) == "table" and (project.id or project.projectID or project.projectId or project.project_id) or nil
+  end
+
+  local function project_dir_from(project)
+    return type(project) == "table" and (project.worktree or project.path or project.directory or project.cwd) or nil
+  end
+
+  get_json(M.current_project_url(opts), function(current_ok, current_data)
+    local current_project = current_data and (current_data.data or current_data)
+    local current_id = project_id_from(current_project)
+    if current_ok and current_id then
+      cb(true, current_id, current_data)
+      return
+    end
+
   get_json(M.project_url(opts), function(ok, data, result)
     if not ok then
       cb(false, nil, data, result)
@@ -302,8 +328,8 @@ function M.get_project_id(directory, opts, cb)
     local first_id
     local current_dir = directory and vim.fs.normalize(directory) or nil
     for _, project in pairs(projects) do
-      local project_id = type(project) == "table" and (project.id or project.projectID or project.projectId or project.project_id)
-      local project_dir = type(project) == "table" and (project.worktree or project.path or project.directory or project.cwd)
+      local project_id = project_id_from(project)
+      local project_dir = project_dir_from(project)
       project_dir = project_dir and vim.fs.normalize(project_dir) or nil
       first_id = first_id or project_id
       if current_dir and project_dir == current_dir then
@@ -312,6 +338,7 @@ function M.get_project_id(directory, opts, cb)
       end
     end
     cb(first_id ~= nil, first_id, data, result)
+  end)
   end)
 end
 

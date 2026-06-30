@@ -35,7 +35,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._events()
             return
         if self.path == "/project":
-            self._json({"data": {"projects": [{"id": "test-project", "worktree": os.getcwd()}]}})
+            self._json({"data": {"projects": [
+                {"id": "wrong-project", "worktree": "/tmp/wrong-project"},
+                {"id": "test-project", "worktree": os.getcwd()},
+            ]}})
+            return
+        if self.path == "/project/current":
+            self._json({"id": "test-project", "worktree": os.getcwd()})
             return
         if self.path == "/session":
             self._text("not found", 404)

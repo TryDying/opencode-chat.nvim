@@ -180,7 +180,9 @@ assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
 assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc", "rename URL should target session update API")
+assert_eq(client.current_project_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/current", "current project URL should target project/current API")
 assert_eq(client.project_sessions_url("project", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project/session", "project sessions URL should target project-scoped sessions")
+assert_eq(client.project_sessions_url("project/with slash", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project%2Fwith%20slash/session", "project id should be URL encoded")
 assert_eq(client.event_subscribe_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/event/subscribe", "event subscribe URL should target SSE endpoint")
 assert_eq(client.extract_assistant_text({
   { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
