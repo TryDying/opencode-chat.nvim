@@ -240,3 +240,10 @@
 - 方案：多 tab 时仍关闭 Chat-only tab；最后一个 tab 只剩 Chat panes 时执行 `quitall!`，并将普通 `hide()` 的 window close 包进 `pcall`，避免最后窗口错误打断流程。
 - 预防：测试必须用子进程覆盖最后一个 tab 场景，关闭唯一代码窗口后 Neovim 应正常退出；若未退出则子进程 `cquit` 失败。
 - commitID：8c4c97c
+
+## 2026-06-29：Chat UI 需要 tab mirror 窗口模型
+
+- 问题：多 tab 编辑不同文件时，每个 tab 都希望有自己的右侧 Chat panes，但它们应共享同一个 opencode server/session/chat 状态和输入草稿。
+- 方案：UI window 状态改为 `state.tabs[tabpage]` 的 tab-local panes；message/input/status buffers 和 messages/context/session/status 仍为进程级共享。当前 tab toggle 负责 reveal/focus，焦点在 Chat 内时隐藏所有 tab 的 Chat UI。
+- 预防：测试必须覆盖 tab1/tab2 同时打开 Chat、共享 messages 和 input draft，以及在一个 Chat 内 toggle 会关闭所有 tab 的 Chat panes。
+- commitID：8839a9e
