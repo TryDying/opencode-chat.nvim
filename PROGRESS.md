@@ -226,3 +226,10 @@
 - 方案：当前 tab 只剩 Chat panes 且存在其它 tab 时直接关闭当前 tab；只有最后一个 tab 时才创建普通空窗口保活。
 - 预防：测试必须覆盖多 tab 场景：关闭唯一代码窗口后，当前 Chat-only tab 应消失并回到原 tab，而不是留下空白 buffer。
 - commitID：baf0359
+
+## 2026-06-29：最后一个 tab 应恢复代码 buffer
+
+- 问题：最后一个 tab 只剩 Chat panes 时不能关闭 tab，旧逻辑用 `enew` 保活，仍会留下空白 buffer。
+- 方案：记录打开 Chat 前最近的普通代码 buffer；最后一个 tab 清理 Chat panes 时优先重新加载并恢复该 buffer，只有找不到普通 buffer 时才创建空窗口。
+- 预防：测试必须覆盖单 tab 场景：关闭唯一代码窗口后，Chat panes 自动清理并恢复原代码 buffer，而不是空白 buffer。
+- commitID：c6be2d1
