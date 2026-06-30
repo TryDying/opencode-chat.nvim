@@ -255,6 +255,27 @@ assert_true(vim.api.nvim_get_mode().mode ~= "i", "message pane focus should stay
 ui.focus_input()
 assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
 
+local code_win_single_tab = nil
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+  if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) == file then
+    code_win_single_tab = win
+    break
+  end
+end
+assert_true(code_win_single_tab and vim.api.nvim_win_is_valid(code_win_single_tab), "single-tab autoclose test should find code window")
+vim.api.nvim_set_current_win(code_win_single_tab)
+vim.cmd("close")
+assert_true(wait_for(function()
+  local wins = vim.api.nvim_tabpage_list_wins(0)
+  return #wins == 1
+    and not ui.is_chat_window(wins[1])
+    and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wins[1])) == file
+    and not vim.api.nvim_win_is_valid(ui.state().message_win or -1)
+    and not vim.api.nvim_win_is_valid(ui.state().input_win or -1)
+    and not vim.api.nvim_win_is_valid(ui.state().status_win or -1)
+end, 1000), "last-tab chat cleanup should restore an existing code buffer instead of leaving blank")
+opencode.toggle()
+
 local original_tab = vim.api.nvim_get_current_tabpage()
 local original_tab_count = #vim.api.nvim_list_tabpages()
 ui.hide()
