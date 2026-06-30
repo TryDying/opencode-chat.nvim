@@ -198,3 +198,10 @@
 - 方案：无论 session 来自 `/project/:id/session`、`/session` 还是 `/api/session`，统一按当前 project id/root 二次过滤；过滤逻辑兼容顶层和嵌套 `session.project` 字段。
 - 预防：fake opencode 的 project session endpoint 必须故意返回当前项目 session 加 foreign session，测试必须断言 foreign session 不出现在 picker 中。
 - commitID：6d89789
+
+## 2026-06-29：Session 作用域应优先使用 directory
+
+- 问题：某些真实 workspace 会共享 `projectID`（例如 `global`），旧逻辑只要 projectID 相同就放行，导致不同 directory 的 sessions 混入当前 picker。
+- 方案：`session_matches_project` 改为 directory/root 优先；当 session 和当前 root 都有目录信息时必须目录相等，只有缺少目录信息时才回退 projectID。
+- 预防：fixture 中 foreign session 必须使用与当前 session 相同的 projectID 但不同 directory，测试必须确保它被过滤掉。
+- commitID：df90f38
