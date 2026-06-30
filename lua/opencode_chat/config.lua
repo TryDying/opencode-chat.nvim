@@ -94,6 +94,33 @@ local function validate_provider(provider_id, provider)
   end
 end
 
+local function normalize_providers()
+  local providers = current.providers
+  if type(providers) ~= "table" then
+    return
+  end
+
+  for key, provider in pairs(vim.deepcopy(providers)) do
+    if type(key) == "number" then
+      if type(provider) ~= "table" then
+        fail("provider entries must be tables")
+      end
+      local provider_id = provider.id or provider.providerID
+      if type(provider_id) ~= "string" or provider_id == "" then
+        fail("array-style provider entries must define id")
+      end
+      if providers[provider_id] ~= nil then
+        fail("provider `" .. provider_id .. "` is defined more than once")
+      end
+      provider = vim.deepcopy(provider)
+      provider.id = nil
+      provider.providerID = nil
+      providers[provider_id] = provider
+      providers[key] = nil
+    end
+  end
+end
+
 local function validate()
   if current.variant ~= nil then
     fail("top-level variant is no longer supported; use providers[provider].models[].default_variant")
@@ -101,6 +128,7 @@ local function validate()
   if type(current.providers) ~= "table" then
     fail("providers must be a table")
   end
+  normalize_providers()
   for provider_id, provider in pairs(current.providers) do
     validate_provider(provider_id, provider)
   end

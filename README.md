@@ -40,6 +40,13 @@ require("opencode_chat").setup({
         { id = "deepseek-v4-pro", default_variant = "high" },
       },
     },
+    -- provider ID 含有 `-` 时，可以使用 bracket key 或 array-style 写法。
+    ["opencode-go"] = {
+      variants = { "low", "medium", "high" },
+      models = {
+        { id = "qwen3-coder", default_variant = "medium" },
+      },
+    },
   },
   keymaps = {
     toggle = "<M-->",
@@ -59,7 +66,7 @@ require("opencode_chat").setup({
 })
 ```
 
-`model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
+`model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。Lua 标识符不能包含 `-`，因此 `opencode-go` 这类 provider 可以写成 `["opencode-go"] = { ... }`，也可以写成 `{ id = "opencode-go", variants = ..., models = ... }` 的 array-style provider 条目。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
 
 如果当前 opencode server 支持 `/event/subscribe` SSE 事件流，插件会尝试根据 `message.part.delta` / `message.part.updated` 增量刷新 assistant 回复；不可用时自动退回非流式响应。
 

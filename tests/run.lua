@@ -58,7 +58,7 @@ vim.cmd("edit " .. vim.fn.fnameescape(file))
 vim.bo.filetype = "lua"
 
 local fake_port = port.pick("127.0.0.1")
-opencode.setup({
+local setup_config = {
   command = cwd .. "/tests/fixtures/opencode",
   port = fake_port,
   startup_timeout_ms = 3000,
@@ -83,7 +83,8 @@ opencode.setup({
     models = "<leader>Xm",
     variants = "<leader>Xt",
   },
-})
+}
+opencode.setup(setup_config)
 
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
 assert_true(vim.fn.exists(":OpencodeAppendContext") == 2, "append context command should be registered")
@@ -111,6 +112,22 @@ assert_true(not pcall(function()
   config.setup({ variant = "low" })
 end), "top-level variant config should be rejected")
 assert_eq(config.current_model().modelID, "deepseek-v4-flash", "failed config setup should preserve current config")
+config.setup({
+  model = "opencode-go/qwen3-coder",
+  providers = {
+    {
+      id = "opencode-go",
+      variants = { "low", "medium" },
+      models = {
+        { id = "qwen3-coder", default_variant = "medium" },
+      },
+    },
+  },
+})
+assert_eq(config.current_model().providerID, "opencode-go", "array-style provider config should support hyphenated IDs")
+assert_eq(config.current_model().modelID, "qwen3-coder", "array-style provider config should select its model")
+assert_eq(config.current_model().variant, "medium", "array-style provider config should use model default variant")
+config.setup(setup_config)
 
 assert_eq(root.find(file), vim.fs.normalize(tmp), "root.find should detect .git root")
 assert_eq(root.relative(file, tmp), "src/example.lua", "root.relative should produce project-relative path")
