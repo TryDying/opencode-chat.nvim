@@ -79,10 +79,23 @@ local function set_configured_keymaps(keymaps)
   end
 end
 
+local function setup_autoclose()
+  local group = vim.api.nvim_create_augroup("opencode_chat_autoclose", { clear = true })
+  vim.api.nvim_create_autocmd({ "WinClosed", "TabEnter" }, {
+    group = group,
+    callback = function()
+      vim.schedule(function()
+        pcall(ui.close_if_only_chat_windows)
+      end)
+    end,
+  })
+end
+
 function M.setup(opts)
   local cfg = config.setup(opts)
   commands.setup(M)
   set_configured_keymaps(cfg.keymaps)
+  setup_autoclose()
   return M
 end
 

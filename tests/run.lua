@@ -255,6 +255,32 @@ assert_true(vim.api.nvim_get_mode().mode ~= "i", "message pane focus should stay
 ui.focus_input()
 assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
 
+local original_tab = vim.api.nvim_get_current_tabpage()
+ui.hide()
+vim.cmd("tabnew " .. vim.fn.fnameescape(file))
+opencode.toggle()
+assert_true(vim.api.nvim_win_is_valid(ui.state().message_win), "chat should open in isolated tab for autoclose test")
+local code_win_for_autoclose = nil
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+  if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) == file then
+    code_win_for_autoclose = win
+    break
+  end
+end
+assert_true(code_win_for_autoclose and vim.api.nvim_win_is_valid(code_win_for_autoclose), "autoclose test should find code window")
+vim.api.nvim_set_current_win(code_win_for_autoclose)
+vim.cmd("close")
+assert_true(wait_for(function()
+  return not vim.api.nvim_win_is_valid(ui.state().message_win or -1)
+    and not vim.api.nvim_win_is_valid(ui.state().input_win or -1)
+    and not vim.api.nvim_win_is_valid(ui.state().status_win or -1)
+    and #vim.api.nvim_tabpage_list_wins(0) == 1
+    and not ui.is_chat_window(vim.api.nvim_tabpage_list_wins(0)[1])
+end, 1000), "chat panes should close automatically when they are the only windows in the tab")
+vim.cmd("tabclose")
+vim.api.nvim_set_current_tabpage(original_tab)
+opencode.toggle()
+
 opencode.show_models()
 local model_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
 assert_true(model_lines:match("deepseek") ~= nil, "model picker should group by provider")

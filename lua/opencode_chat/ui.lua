@@ -25,6 +25,23 @@ local function valid_buf(buf_id)
   return buf_id and vim.api.nvim_buf_is_valid(buf_id)
 end
 
+local function is_chat_buf(buf)
+  if not valid_buf(buf) then
+    return false
+  end
+  return vim.api.nvim_buf_get_name(buf):match("^opencode%-chat://") ~= nil
+end
+
+local function is_chat_win(win)
+  if not valid_win(win) then
+    return false
+  end
+  if win == state.message_win or win == state.input_win or win == state.status_win then
+    return true
+  end
+  return is_chat_buf(vim.api.nvim_win_get_buf(win))
+end
+
 local function layout()
   local cfg = config.get().ui
   local total_width = math.floor(vim.o.columns * cfg.width)
@@ -275,6 +292,31 @@ function M.hide()
   state.message_win = nil
   state.status_win = nil
   state.input_win = nil
+end
+
+function M.close_if_only_chat_windows()
+  local wins = vim.api.nvim_tabpage_list_wins(0)
+  local chat_count = 0
+  local other_count = 0
+  for _, win in ipairs(wins) do
+    if is_chat_win(win) then
+      chat_count = chat_count + 1
+    else
+      other_count = other_count + 1
+    end
+  end
+  if chat_count == 0 or other_count > 0 then
+    return false
+  end
+
+  pcall(vim.cmd, "botright new")
+  pcall(vim.cmd, "enew")
+  M.hide()
+  return true
+end
+
+function M.is_chat_window(win)
+  return is_chat_win(win)
 end
 
 function M.toggle()

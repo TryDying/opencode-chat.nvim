@@ -10,6 +10,7 @@
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
 - Chat UI 底部固定 status bar，显示 Idle/Thinking/Streaming/Error 等状态和当前 model/variant。
+- 当前 tab 只剩 opencode-chat 的 message/input/status 窗口时，会自动关闭这些 Chat 窗口，避免留下孤立 pane。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
 - `:OpencodeAppendContext` 在 Normal 模式追加当前文件、Visual 模式追加选区；上下文自动去重，推荐映射为 `<leader>Xe`，追加后保持代码 pane 焦点。
