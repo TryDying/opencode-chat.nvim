@@ -256,6 +256,7 @@ ui.focus_input()
 assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
 
 local original_tab = vim.api.nvim_get_current_tabpage()
+local original_tab_count = #vim.api.nvim_list_tabpages()
 ui.hide()
 vim.cmd("tabnew " .. vim.fn.fnameescape(file))
 opencode.toggle()
@@ -271,14 +272,12 @@ assert_true(code_win_for_autoclose and vim.api.nvim_win_is_valid(code_win_for_au
 vim.api.nvim_set_current_win(code_win_for_autoclose)
 vim.cmd("close")
 assert_true(wait_for(function()
-  return not vim.api.nvim_win_is_valid(ui.state().message_win or -1)
+  return vim.api.nvim_get_current_tabpage() == original_tab
+    and #vim.api.nvim_list_tabpages() == original_tab_count
+    and not vim.api.nvim_win_is_valid(ui.state().message_win or -1)
     and not vim.api.nvim_win_is_valid(ui.state().input_win or -1)
     and not vim.api.nvim_win_is_valid(ui.state().status_win or -1)
-    and #vim.api.nvim_tabpage_list_wins(0) == 1
-    and not ui.is_chat_window(vim.api.nvim_tabpage_list_wins(0)[1])
-end, 1000), "chat panes should close automatically when they are the only windows in the tab")
-vim.cmd("tabclose")
-vim.api.nvim_set_current_tabpage(original_tab)
+end, 1000), "tab should close automatically when only chat panes remain and another tab exists")
 opencode.toggle()
 
 opencode.show_models()

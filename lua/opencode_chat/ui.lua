@@ -309,6 +309,17 @@ function M.close_if_only_chat_windows()
     return false
   end
 
+  pcall(function()
+    require("opencode_chat.picker").close()
+  end)
+  if #vim.api.nvim_list_tabpages() > 1 then
+    pcall(vim.cmd, "tabclose")
+    state.message_win = nil
+    state.status_win = nil
+    state.input_win = nil
+    return true
+  end
+
   pcall(vim.cmd, "botright new")
   pcall(vim.cmd, "enew")
   M.hide()
