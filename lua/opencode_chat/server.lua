@@ -71,13 +71,13 @@ local function session_matches_project(session)
   if type(session) ~= "table" then
     return false
   end
-  local project_id = session_project_id(session)
-  if state.project_id and project_id == state.project_id then
-    return true
-  end
   local session_dir = normalize_path(session_directory(session))
   local current_root = normalize_path(state.root)
-  return session_dir ~= nil and current_root ~= nil and session_dir == current_root
+  if session_dir ~= nil and current_root ~= nil then
+    return session_dir == current_root
+  end
+  local project_id = session_project_id(session)
+  return state.project_id ~= nil and project_id == state.project_id
 end
 
 local function session_list_payload(raw)

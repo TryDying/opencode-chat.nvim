@@ -49,7 +49,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         foreign = {
             "id": "foreign-session",
             "title": "Other workspace session",
-            "projectID": "other-project",
+            "projectID": "test-project",
             "directory": "/tmp/other-workspace",
         }
         if self.path == "/api/session":
