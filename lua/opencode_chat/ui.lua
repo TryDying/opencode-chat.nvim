@@ -42,7 +42,10 @@ local function set_panel_win_options(win)
   vim.wo[win].statusline = ""
 end
 
-local function set_buf_options(buf, filetype)
+local function set_buf_options(buf, filetype, name)
+  if name and vim.api.nvim_buf_get_name(buf) == "" then
+    pcall(vim.api.nvim_buf_set_name, buf, name)
+  end
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].swapfile = false
@@ -59,7 +62,7 @@ end
 local function ensure_buffers()
   if not valid_buf(state.message_buf) then
     state.message_buf = vim.api.nvim_create_buf(false, true)
-    set_buf_options(state.message_buf, "markdown")
+    set_buf_options(state.message_buf, "markdown", "opencode-chat://messages")
     vim.bo[state.message_buf].modifiable = false
     vim.keymap.set("n", "<Tab>", function()
       require("opencode_chat.ui").focus_input()
@@ -79,12 +82,12 @@ local function ensure_buffers()
   end
   if not valid_buf(state.status_buf) then
     state.status_buf = vim.api.nvim_create_buf(false, true)
-    set_buf_options(state.status_buf, "opencode-status")
+    set_buf_options(state.status_buf, "opencode-status", "opencode-chat://status")
     vim.bo[state.status_buf].modifiable = false
   end
   if not valid_buf(state.input_buf) then
     state.input_buf = vim.api.nvim_create_buf(false, true)
-    set_buf_options(state.input_buf, "markdown")
+    set_buf_options(state.input_buf, "markdown", "opencode-chat://input")
     vim.bo[state.input_buf].filetype = "markdown"
     vim.keymap.set("n", "<C-s>", function()
       require("opencode_chat").submit()
