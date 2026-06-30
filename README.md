@@ -10,7 +10,7 @@
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
 - Chat UI 底部固定 status bar，显示 Idle/Thinking/Streaming/Error 等状态和当前 model/variant。
-- 多个 tab 中打开的 Chat UI 是镜像：共享同一份 messages、input 草稿、context、session 和状态。
+- Chat UI 是 tab mirror：只要 Chat 当前可见，新建/切入 tab 会自动显示同一份 Chat；所有 tab 共享 messages、input 草稿、context、session 和状态。
 - 当前 tab 只剩 opencode-chat 的 message/input/status 窗口时，会自动关闭这些 Chat 窗口，避免留下孤立 pane。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。

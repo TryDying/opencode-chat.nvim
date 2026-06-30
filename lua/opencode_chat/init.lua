@@ -89,6 +89,14 @@ local function setup_autoclose()
       end)
     end,
   })
+  vim.api.nvim_create_autocmd({ "TabEnter", "TabNewEntered" }, {
+    group = group,
+    callback = function()
+      vim.schedule(function()
+        pcall(ui.show_current_tab_if_visible)
+      end)
+    end,
+  })
 end
 
 function M.setup(opts)

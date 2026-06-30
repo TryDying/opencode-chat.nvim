@@ -7,6 +7,7 @@ local state = {
   status_win = nil,
   input_win = nil,
   tabs = {},
+  visible = false,
   message_buf = nil,
   status_buf = nil,
   input_buf = nil,
@@ -292,6 +293,7 @@ end
 
 function M.show(opts)
   opts = opts or {}
+  state.visible = true
   if opts.focus ~= "none" or opts.leave_visual then
     leave_visual_mode()
   end
@@ -329,6 +331,7 @@ function M.focus_input()
 end
 
 function M.hide()
+  state.visible = false
   pcall(function()
     require("opencode_chat.picker").close()
   end)
@@ -347,6 +350,28 @@ function M.hide()
   state.message_win = nil
   state.status_win = nil
   state.input_win = nil
+end
+
+function M.show_current_tab_if_visible()
+  if not state.visible then
+    return false
+  end
+  local wins = vim.api.nvim_tabpage_list_wins(0)
+  local has_other_window = false
+  for _, win in ipairs(wins) do
+    if not is_chat_win(win) then
+      has_other_window = true
+      break
+    end
+  end
+  if not has_other_window then
+    return false
+  end
+  if panes_valid(sync_current_panes()) then
+    return true
+  end
+  M.show({ focus = "none" })
+  return true
 end
 
 function M.close_if_only_chat_windows()
@@ -369,6 +394,8 @@ function M.close_if_only_chat_windows()
   end)
   if #vim.api.nvim_list_tabpages() > 1 then
     state.tabs[tab_key()] = nil
+    local still_visible = any_panes_visible()
+    state.visible = still_visible
     pcall(vim.cmd, "tabclose")
     sync_current_panes()
     return true
