@@ -163,3 +163,10 @@
 - 方案：SSE 客户端改为按空行事件边界聚合 `data:` 后解码；server 层同时支持 `message.part.delta` 增量累积和 `message.part.updated` 全量更新，并按 session 过滤事件。
 - 预防：fake opencode 必须提供 `/event/subscribe` 并发送分片 delta；测试必须断言请求完成前 assistant 文本已经开始渲染。
 - commitID：84111de
+
+## 2026-06-29：Session 列表需要兼容包装响应
+
+- 问题：真实 project session API 可能返回 `data.sessions`、`sessions`、`items` 或对象 map，原逻辑只按数组根/`data` 遍历，导致 `<leader>Xl` 打开 picker 但 sessions 为空。
+- 方案：统一提取 session list payload，兼容多种包装和 id/project/path 字段名；本进程创建的 session 缓存补齐当前 project/root，便于 API 空列表时 fallback。
+- 预防：fake opencode 的 project session 响应改为 `data.sessions` 包装，测试必须继续覆盖 session picker 能显示当前 project sessions 且过滤其它 workspace。
+- commitID：c9f6028
