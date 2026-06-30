@@ -63,6 +63,7 @@ local function set_configured_keymaps(keymaps)
   local opts = { noremap = true, silent = true }
   local maps = {
     toggle = { mode = "n", rhs = function() require("opencode_chat").toggle() end, desc = "Toggle opencode chat" },
+    append_context = { mode = { "n", "v" }, rhs = function() require("opencode_chat").append_context() end, desc = "Append context to opencode chat" },
     append_selection = { mode = "v", rhs = function() require("opencode_chat").append_selection() end, desc = "Append selection to opencode chat" },
     sessions = { mode = "n", rhs = function() require("opencode_chat").show_sessions() end, desc = "List opencode sessions" },
     new_session = { mode = "n", rhs = function() require("opencode_chat").new_session() end, desc = "New opencode session" },
@@ -193,6 +194,39 @@ end
 function M.append_selection()
   local item, project_root = context.selection_item(0)
   ui.add_context(item, project_root)
+end
+
+function M.append_context()
+  local mode = vim.api.nvim_get_mode().mode
+  local is_visual = mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19"
+  local item, project_root
+  if is_visual then
+    item, project_root = context.selection_item(0)
+  else
+    item, project_root = context.file_item(0)
+  end
+  ui.add_context(item, project_root, { focus = "none", leave_visual = is_visual })
+end
+
+function M.remove_context(index)
+  if not ui.remove_context(index) then
+    notify_error("opencode context item not found: " .. tostring(index))
+    return false
+  end
+  return true
+end
+
+function M.remove_context_at_cursor()
+  local index = ui.context_index_at_cursor()
+  if not index then
+    notify_error("move cursor to a context line to remove it")
+    return false
+  end
+  return M.remove_context(index)
+end
+
+function M.clear_context()
+  ui.clear_context()
 end
 
 function M.edit(instruction)

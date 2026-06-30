@@ -76,6 +76,7 @@ opencode.setup({
   },
   keymaps = {
     toggle = "<M-->",
+    append_context = "<leader>Xe",
     append_selection = "<M-->",
     sessions = "<leader>Xl",
     new_session = "<leader>Xn",
@@ -86,6 +87,9 @@ opencode.setup({
 })
 
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
+assert_true(vim.fn.exists(":OpencodeAppendContext") == 2, "append context command should be registered")
+assert_true(vim.fn.exists(":OpencodeContextRemove") == 2, "context remove command should be registered")
+assert_true(vim.fn.exists(":OpencodeContextClear") == 2, "context clear command should be registered")
 assert_true(vim.fn.exists(":OpencodeAsk") == 2, "ask command should be registered")
 assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registered")
 assert_true(vim.fn.exists(":OpencodeCancel") == 2, "cancel command should be registered")
@@ -95,6 +99,8 @@ assert_true(vim.fn.exists(":OpencodeModels") == 2, "models command should be reg
 assert_true(vim.fn.exists(":OpencodeVariants") == 2, "variants command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
 assert_true(vim.fn.maparg("<M-->", "v") ~= "", "visual <M--> should be mapped")
+assert_true(vim.fn.maparg("<leader>Xe", "n") ~= "", "normal append context keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xe", "v") ~= "", "visual append context keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xl", "n") ~= "", "session list keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xn", "n") ~= "", "new session keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xr", "n") ~= "", "rename session keymap should be mapped")
@@ -136,6 +142,37 @@ assert_eq(vim.api.nvim_get_current_win(), ui.state().input_win, "visual append s
 assert_true(vim.api.nvim_get_mode().mode ~= "v" and vim.api.nvim_get_mode().mode ~= "V", "visual append should leave visual mode")
 ui.consume_context()
 vim.cmd("normal! \027")
+
+local code_win = nil
+for _, win in ipairs(vim.api.nvim_list_wins()) do
+  if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) == file then
+    code_win = win
+    break
+  end
+end
+assert_true(code_win and vim.api.nvim_win_is_valid(code_win), "code pane should remain open")
+vim.api.nvim_set_current_win(code_win)
+opencode.append_context()
+assert_eq(vim.api.nvim_get_current_win(), code_win, "normal append_context should keep focus on code pane")
+assert_eq(#ui.state().context, 1, "normal append_context should add current file once")
+assert_eq(ui.state().context[1].label, "@src/example.lua", "normal append_context should add current file")
+opencode.append_context()
+assert_eq(#ui.state().context, 1, "append_context should deduplicate current file")
+
+vim.api.nvim_set_current_win(code_win)
+vim.cmd("normal! 8G0V")
+opencode.append_context()
+assert_eq(vim.api.nvim_get_current_win(), code_win, "visual append_context should keep focus on code pane")
+assert_true(vim.api.nvim_get_mode().mode ~= "v" and vim.api.nvim_get_mode().mode ~= "V", "visual append_context should leave visual mode")
+assert_eq(#ui.state().context, 2, "visual append_context should add a second unique context")
+assert_eq(ui.state().context[2].label, "@src/example.lua#L8-L8", "visual append_context should add selected lines")
+vim.api.nvim_set_current_win(ui.state().message_win)
+vim.api.nvim_win_set_cursor(ui.state().message_win, { 4, 0 })
+assert_true(opencode.remove_context_at_cursor(), "context line d action should remove item under cursor")
+assert_eq(#ui.state().context, 1, "remove_context_at_cursor should remove one context item")
+opencode.clear_context()
+assert_eq(#ui.state().context, 0, "clear_context should remove all context items")
+vim.api.nvim_set_current_win(code_win)
 
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should prefer current API")
 assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")

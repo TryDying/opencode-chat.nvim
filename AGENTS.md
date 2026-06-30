@@ -51,8 +51,9 @@ These routing rules are mandatory for this repository.
 - The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Streaming/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
 - Chat panel sizing must be configurable through `ui.width`, `ui.height`, and optional `ui.message_height`.
 - Toggle should reveal/focus first: if the panel is visible but unfocused, focus the input pane; only hide when focus is already inside the Chat panel.
-- Global keymaps must be user-configurable through `keymaps`; do not hard-code or register default global mappings. Recommended examples are `<leader>Xl`, `<leader>Xn`, `<leader>Xr`, `<leader>Xm`, and `<leader>Xt`.
-- Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission.
+- Global keymaps must be user-configurable through `keymaps`; do not hard-code or register default global mappings. Recommended examples are `<leader>Xe`, `<leader>Xl`, `<leader>Xn`, `<leader>Xr`, `<leader>Xm`, and `<leader>Xt`.
+- Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission. `append_context` should keep focus on the code pane and deduplicate context items by reference.
+- Context UI must support removing individual numbered items and clearing all queued context.
 - File references should use `@relative/path`; selection references should use `@relative/path#Lstart-Lend` with ascending line numbers.
 - Project root markers are `.root`, `.git`, `.svn`, `.hg`, `.project`, `.ccls`.
 

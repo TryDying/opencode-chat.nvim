@@ -13,6 +13,18 @@ function M.setup(api)
     api.append_selection()
   end, { range = true, force = true })
 
+  vim.api.nvim_create_user_command("OpencodeAppendContext", function()
+    api.append_context()
+  end, { range = true, force = true })
+
+  vim.api.nvim_create_user_command("OpencodeContextRemove", function(opts)
+    api.remove_context(opts.args)
+  end, { nargs = 1, force = true })
+
+  vim.api.nvim_create_user_command("OpencodeContextClear", function()
+    api.clear_context()
+  end, { force = true })
+
   vim.api.nvim_create_user_command("OpencodeAsk", function(opts)
     api.ask(opts.args)
   end, { nargs = "*", force = true })

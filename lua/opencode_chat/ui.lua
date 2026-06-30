@@ -52,7 +52,7 @@ end
 local function leave_visual_mode()
   local mode = vim.api.nvim_get_mode().mode
   if mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19" then
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+    vim.cmd("normal! \027")
   end
 end
 
@@ -70,6 +70,12 @@ local function ensure_buffers()
     vim.keymap.set("n", "<C-c>", function()
       require("opencode_chat").cancel()
     end, { buffer = state.message_buf, silent = true, desc = "Cancel opencode request" })
+    vim.keymap.set("n", "d", function()
+      require("opencode_chat").remove_context_at_cursor()
+    end, { buffer = state.message_buf, silent = true, desc = "Remove opencode context under cursor" })
+    vim.keymap.set("n", "D", function()
+      require("opencode_chat").clear_context()
+    end, { buffer = state.message_buf, silent = true, desc = "Clear opencode context" })
   end
   if not valid_buf(state.status_buf) then
     state.status_buf = vim.api.nvim_create_buf(false, true)
@@ -171,15 +177,15 @@ function M.render()
   local lines = { "# opencode-chat.nvim", "" }
   if #state.context > 0 then
     table.insert(lines, "## Context")
-    for _, item in ipairs(state.context) do
-      table.insert(lines, "- " .. item.label)
+    for index, item in ipairs(state.context) do
+      table.insert(lines, string.format("%d. %s", index, item.label))
     end
     table.insert(lines, "")
   end
 
   if #state.messages == 0 then
     table.insert(lines, "在下方输入区写问题，按 <C-s> 提交。")
-    table.insert(lines, "Visual <M--> 可加入选区上下文。")
+    table.insert(lines, "Context 行可在消息区按 d 删除，按 D 清空。")
   else
     for _, msg in ipairs(state.messages) do
       table.insert(lines, "## " .. msg.role)
@@ -214,7 +220,7 @@ end
 
 function M.show(opts)
   opts = opts or {}
-  if opts.focus ~= "none" then
+  if opts.focus ~= "none" or opts.leave_visual then
     leave_visual_mode()
   end
   open_windows()
@@ -287,10 +293,47 @@ function M.toggle()
   return state
 end
 
-function M.add_context(item, project_root)
+function M.add_context(item, project_root, opts)
+  opts = opts or {}
+  for index, existing in ipairs(state.context) do
+    if existing.label == item.label then
+      state.context[index] = item
+      state.context_root = project_root or state.context_root
+      M.show({ focus = opts.focus or "input", leave_visual = opts.leave_visual })
+      return false
+    end
+  end
   table.insert(state.context, item)
   state.context_root = project_root or state.context_root
-  M.show({ focus = "input" })
+  M.show({ focus = opts.focus or "input", leave_visual = opts.leave_visual })
+  return true
+end
+
+function M.remove_context(index)
+  index = tonumber(index)
+  if not index or index < 1 or index > #state.context then
+    return false
+  end
+  table.remove(state.context, index)
+  if #state.context == 0 then
+    state.context_root = nil
+  end
+  M.render()
+  return true
+end
+
+function M.clear_context()
+  state.context = {}
+  state.context_root = nil
+  M.render()
+end
+
+function M.context_index_at_cursor()
+  if not valid_win(state.message_win) or vim.api.nvim_get_current_win() ~= state.message_win then
+    return nil
+  end
+  local line = vim.api.nvim_get_current_line()
+  return tonumber(line:match("^(%d+)%.%s+@"))
 end
 
 function M.consume_context()
