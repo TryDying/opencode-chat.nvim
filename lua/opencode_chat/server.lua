@@ -36,11 +36,12 @@ local function remember_session(session_id, data)
   if not session_id then
     return
   end
+  local raw = data and (data.data or data) or {}
   state.sessions[session_id] = vim.tbl_extend("force", state.sessions[session_id] or {}, {
     id = session_id,
-    title = (data and (data.title or (data.data and data.data.title))) or session_id,
-    projectID = data and (data.projectID or (data.data and data.data.projectID)),
-    directory = data and (data.directory or (data.data and data.data.directory)),
+    title = raw.title or session_id,
+    projectID = raw.projectID or raw.projectId or raw.project_id or state.project_id,
+    directory = raw.directory or raw.path or raw.worktree or raw.cwd or state.root,
     model = config.current_model(),
   })
 end
@@ -49,12 +50,34 @@ local function session_matches_project(session)
   if type(session) ~= "table" then
     return false
   end
-  if state.project_id and session.projectID == state.project_id then
+  local project_id = session.projectID or session.projectId or session.project_id
+  if state.project_id and project_id == state.project_id then
     return true
   end
-  local session_dir = normalize_path(session.directory)
+  local session_dir = normalize_path(session.directory or session.path or session.worktree or session.cwd)
   local current_root = normalize_path(state.root)
   return session_dir ~= nil and current_root ~= nil and session_dir == current_root
+end
+
+local function session_list_payload(raw)
+  if type(raw) ~= "table" then
+    return {}
+  end
+  local payload = raw.data or raw
+  if type(payload) ~= "table" then
+    return {}
+  end
+  if payload.sessions then
+    payload = payload.sessions
+  elseif payload.items then
+    payload = payload.items
+  elseif payload.list then
+    payload = payload.list
+  end
+  if type(payload) ~= "table" then
+    return {}
+  end
+  return payload
 end
 
 local function collect_sessions(raw, filter_project)
@@ -62,7 +85,11 @@ local function collect_sessions(raw, filter_project)
   if type(raw) ~= "table" then
     return sessions
   end
-  for _, item in ipairs(raw) do
+  for _, item in pairs(session_list_payload(raw)) do
+    local id = type(item) == "table" and (item.id or item.sessionID or item.sessionId or item.session_id)
+    if type(item) == "table" and id then
+      item.id = id
+    end
     if type(item) == "table" and item.id and (not filter_project or session_matches_project(item)) then
       table.insert(sessions, item)
       remember_session(item.id, item)
@@ -324,20 +351,20 @@ function M.list_sessions(cb)
 
     if state.project_id then
       client.list_project_sessions(state.project_id, opts, function(project_ok, project_data, project_result)
-        local project_sessions = collect_sessions(project_data and (project_data.data or project_data), false)
+        local project_sessions = collect_sessions(project_data, false)
         if project_ok then
           finish_with_cache(project_sessions, true, project_result)
           return
         end
         client.list_sessions(opts, function(list_ok, data, result)
-          finish_with_cache(collect_sessions(data and (data.data or data), true), list_ok, list_ok and result or project_result)
+          finish_with_cache(collect_sessions(data, true), list_ok, list_ok and result or project_result)
         end)
       end)
       return
     end
 
     client.list_sessions(opts, function(list_ok, data, result)
-      finish_with_cache(collect_sessions(data and (data.data or data), true), list_ok, result)
+      finish_with_cache(collect_sessions(data, true), list_ok, result)
     end)
   end)
 end

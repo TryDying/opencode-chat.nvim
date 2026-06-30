@@ -47,7 +47,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(SESSIONS + [foreign])
             return
         if self.path == "/project/test-project/session":
-            self._json(SESSIONS)
+            self._json({"data": {"sessions": SESSIONS}})
             return
         match = re.match(r"^/session/([^/]+)/message$", self.path)
         if match:
