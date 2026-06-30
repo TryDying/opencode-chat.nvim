@@ -288,15 +288,22 @@ function M.get_project_id(directory, opts, cb)
       return
     end
     local projects = data and (data.data or data)
+    if type(projects) == "table" then
+      projects = projects.projects or projects.items or projects.list or projects
+    end
     if type(projects) ~= "table" then
       cb(false, nil, data, result)
       return
     end
     local first_id
-    for _, project in ipairs(projects) do
-      first_id = first_id or project.id
-      if project.worktree == directory or project.path == directory or project.directory == directory then
-        cb(project.id ~= nil, project.id, data, result)
+    local current_dir = directory and vim.fs.normalize(directory) or nil
+    for _, project in pairs(projects) do
+      local project_id = type(project) == "table" and (project.id or project.projectID or project.projectId or project.project_id)
+      local project_dir = type(project) == "table" and (project.worktree or project.path or project.directory or project.cwd)
+      project_dir = project_dir and vim.fs.normalize(project_dir) or nil
+      first_id = first_id or project_id
+      if current_dir and project_dir == current_dir then
+        cb(project_id ~= nil, project_id, data, result)
         return
       end
     end

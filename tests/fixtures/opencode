@@ -35,7 +35,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._events()
             return
         if self.path == "/project":
-            self._json([{"id": "test-project", "worktree": os.getcwd()}])
+            self._json({"data": {"projects": [{"id": "test-project", "worktree": os.getcwd()}]}})
             return
         if self.path == "/session":
             foreign = {
@@ -44,10 +44,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "projectID": "other-project",
                 "directory": "/tmp/other-workspace",
             }
-            self._json(SESSIONS + [foreign])
+            self._json({"data": {"items": SESSIONS + [foreign]}})
             return
         if self.path == "/project/test-project/session":
-            self._json({"data": {"sessions": SESSIONS}})
+            self._json({"data": {"sessions": []}})
             return
         match = re.match(r"^/session/([^/]+)/message$", self.path)
         if match:

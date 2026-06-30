@@ -98,6 +98,20 @@ local function collect_sessions(raw, filter_project)
   return sessions
 end
 
+local function merge_sessions(base, extra)
+  local seen = {}
+  local out = {}
+  for _, list in ipairs({ base or {}, extra or {} }) do
+    for _, session in ipairs(list) do
+      if session.id and not seen[session.id] then
+        seen[session.id] = true
+        table.insert(out, session)
+      end
+    end
+  end
+  return out
+end
+
 function M.ensure_server(startpath, cb)
   local cfg = config.get()
 
@@ -335,13 +349,18 @@ function M.list_sessions(cb)
       return
     end
     local opts = { host = config.get().host, port = state.port }
+    local function cached_sessions()
+      local sessions = {}
+      for _, item in pairs(state.sessions) do
+        if session_matches_project(item) then
+          table.insert(sessions, item)
+        end
+      end
+      return sessions
+    end
     local function finish_with_cache(sessions, list_ok, result)
       if #sessions == 0 then
-        for _, item in pairs(state.sessions) do
-          if session_matches_project(item) then
-            table.insert(sessions, item)
-          end
-        end
+        sessions = cached_sessions()
       end
       table.sort(sessions, function(a, b)
         return tostring(a.title or a.id) < tostring(b.title or b.id)
@@ -352,12 +371,13 @@ function M.list_sessions(cb)
     if state.project_id then
       client.list_project_sessions(state.project_id, opts, function(project_ok, project_data, project_result)
         local project_sessions = collect_sessions(project_data, false)
-        if project_ok then
-          finish_with_cache(project_sessions, true, project_result)
+        if project_ok and #project_sessions > 0 then
+          finish_with_cache(merge_sessions(project_sessions, cached_sessions()), true, project_result)
           return
         end
         client.list_sessions(opts, function(list_ok, data, result)
-          finish_with_cache(collect_sessions(data, true), list_ok, list_ok and result or project_result)
+          local global_sessions = collect_sessions(data, true)
+          finish_with_cache(merge_sessions(project_sessions, global_sessions), list_ok or project_ok, list_ok and result or project_result)
         end)
       end)
       return
