@@ -15,7 +15,6 @@ local state = {
   status = "Idle",
   spinner = nil,
   spinner_index = 1,
-  last_normal_buf = nil,
 }
 
 local function valid_win(win_id)
@@ -41,31 +40,6 @@ local function is_chat_win(win)
     return true
   end
   return is_chat_buf(vim.api.nvim_win_get_buf(win))
-end
-
-local function fallback_normal_buf()
-  if valid_buf(state.last_normal_buf) and vim.bo[state.last_normal_buf].buflisted and vim.bo[state.last_normal_buf].buftype == "" and not is_chat_buf(state.last_normal_buf) then
-    if not vim.api.nvim_buf_is_loaded(state.last_normal_buf) then
-      pcall(vim.fn.bufload, state.last_normal_buf)
-    end
-    return state.last_normal_buf
-  end
-  local alternate = vim.fn.bufnr("#")
-  if valid_buf(alternate) and vim.bo[alternate].buflisted and vim.bo[alternate].buftype == "" and not is_chat_buf(alternate) then
-    if not vim.api.nvim_buf_is_loaded(alternate) then
-      pcall(vim.fn.bufload, alternate)
-    end
-    return alternate
-  end
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if valid_buf(buf) and vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and not is_chat_buf(buf) then
-      if not vim.api.nvim_buf_is_loaded(buf) then
-        pcall(vim.fn.bufload, buf)
-      end
-      return buf
-    end
-  end
-  return nil
 end
 
 local function layout()
@@ -161,12 +135,6 @@ local function open_windows()
 
   local cfg, width, input_height, total_height = layout()
   local previous = vim.api.nvim_get_current_win()
-  if valid_win(previous) then
-    local previous_buf = vim.api.nvim_win_get_buf(previous)
-    if valid_buf(previous_buf) and vim.bo[previous_buf].buflisted and vim.bo[previous_buf].buftype == "" and not is_chat_buf(previous_buf) then
-      state.last_normal_buf = previous_buf
-    end
-  end
   local old_winminheight = vim.o.winminheight
   local old_equalalways = vim.o.equalalways
   vim.o.winminheight = 0
@@ -313,13 +281,13 @@ function M.hide()
     require("opencode_chat.picker").close()
   end)
   if valid_win(state.message_win) then
-    vim.api.nvim_win_close(state.message_win, true)
+    pcall(vim.api.nvim_win_close, state.message_win, true)
   end
   if valid_win(state.status_win) then
-    vim.api.nvim_win_close(state.status_win, true)
+    pcall(vim.api.nvim_win_close, state.status_win, true)
   end
   if valid_win(state.input_win) then
-    vim.api.nvim_win_close(state.input_win, true)
+    pcall(vim.api.nvim_win_close, state.input_win, true)
   end
   state.message_win = nil
   state.status_win = nil
@@ -352,14 +320,7 @@ function M.close_if_only_chat_windows()
     return true
   end
 
-  local fallback = fallback_normal_buf()
-  pcall(vim.cmd, "botright new")
-  if fallback then
-    pcall(vim.api.nvim_win_set_buf, vim.api.nvim_get_current_win(), fallback)
-  else
-    pcall(vim.cmd, "enew")
-  end
-  M.hide()
+  pcall(vim.cmd, "quitall!")
   return true
 end
 

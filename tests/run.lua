@@ -255,27 +255,6 @@ assert_true(vim.api.nvim_get_mode().mode ~= "i", "message pane focus should stay
 ui.focus_input()
 assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
 
-local code_win_single_tab = nil
-for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-  if vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) == file then
-    code_win_single_tab = win
-    break
-  end
-end
-assert_true(code_win_single_tab and vim.api.nvim_win_is_valid(code_win_single_tab), "single-tab autoclose test should find code window")
-vim.api.nvim_set_current_win(code_win_single_tab)
-vim.cmd("close")
-assert_true(wait_for(function()
-  local wins = vim.api.nvim_tabpage_list_wins(0)
-  return #wins == 1
-    and not ui.is_chat_window(wins[1])
-    and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(wins[1])) == file
-    and not vim.api.nvim_win_is_valid(ui.state().message_win or -1)
-    and not vim.api.nvim_win_is_valid(ui.state().input_win or -1)
-    and not vim.api.nvim_win_is_valid(ui.state().status_win or -1)
-end, 1000), "last-tab chat cleanup should restore an existing code buffer instead of leaving blank")
-opencode.toggle()
-
 local original_tab = vim.api.nvim_get_current_tabpage()
 local original_tab_count = #vim.api.nvim_list_tabpages()
 ui.hide()
@@ -300,6 +279,29 @@ assert_true(wait_for(function()
     and not vim.api.nvim_win_is_valid(ui.state().status_win or -1)
 end, 1000), "tab should close automatically when only chat panes remain and another tab exists")
 opencode.toggle()
+
+local quit_script = vim.fn.tempname() .. ".lua"
+local quit_file = tmp .. "/src/quit-last-tab.lua"
+vim.fn.writefile({
+  "local repo = " .. vim.inspect(cwd),
+  "local file = " .. vim.inspect(quit_file),
+  "vim.opt.runtimepath:prepend(repo)",
+  "package.path = repo .. '/lua/?.lua;' .. repo .. '/lua/?/init.lua;' .. package.path",
+  "vim.cmd('runtime plugin/opencode_chat.lua')",
+  "require('opencode_chat').setup({})",
+  "vim.cmd('edit ' .. vim.fn.fnameescape(file))",
+  "require('opencode_chat').toggle()",
+  "local ui = require('opencode_chat.ui')",
+  "for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do",
+  "  if not ui.is_chat_window(win) then vim.api.nvim_set_current_win(win); break end",
+  "end",
+  "vim.defer_fn(function() pcall(vim.cmd, 'cquit 7') end, 1000)",
+  "vim.cmd('close')",
+  "vim.wait(2000)",
+}, quit_script)
+local quit_result = vim.fn.system({ "nvim", "--headless", "-u", "NONE", "-l", quit_script })
+assert_eq(vim.v.shell_error, 0, "last-tab chat cleanup should let Neovim quit instead of leaving a blank buffer: " .. quit_result)
+vim.fn.delete(quit_script)
 
 opencode.show_models()
 local model_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
