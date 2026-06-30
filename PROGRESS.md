@@ -177,3 +177,10 @@
 - 方案：增强 `/project` 列表解析；project sessions 成功但为空时继续查询全局 sessions，按当前 project/root 过滤并与缓存去重合并。
 - 预防：fake opencode 让 `/project/:id/session` 返回空、`/session` 返回 wrapped items，测试必须仍能在 session picker 中看到当前 project sessions 且过滤 foreign session。
 - commitID：f407c54
+
+## 2026-06-29：真实全局 session fallback 是 `/api/session`
+
+- 问题：上一轮修复仍把 fallback 写到 `GET /session`，fake server 也错误接受该路径；真实 opencode 的全局 session 列表是 v2 `GET /api/session`，所以实测 picker 仍显示 `(empty)`。
+- 方案：`list_sessions` 先尝试兼容 `/session`，失败后请求 `/api/session`；fake server 改为让 `/session` 返回 404，只通过 `/api/session` 返回 wrapped `items`。
+- 预防：测试桩不能只模拟我们猜测的接口，涉及真实 opencode 路径时必须让错误旧路径失败，确保 fallback 覆盖真实 API。
+- commitID：be39383
