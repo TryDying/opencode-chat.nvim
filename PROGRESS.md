@@ -135,3 +135,10 @@
 - 方案：在 Chat `show`、`focus_input`、`focus_messages` 等聚焦入口统一检测 Visual/Select 模式并发送 `<Esc>`，再切换到目标 pane。
 - 预防：测试必须覆盖 active visual selection 追加上下文后，焦点进入 input pane 且当前模式不再是 Visual。
 - commitID：2a62bc7
+
+## 2026-06-29：Active Visual 选区必须优先于旧 marks
+
+- 问题：连续 Visual 追加上下文时，第二次可能重复追加上一次的 `'<`/`'>` 范围，第三次才拿到新范围，因为 active Visual 选区尚未写回 marks。
+- 方案：`visual_line_range` 在当前仍处于 Visual/Select 模式时优先读取 `getpos("v")` 与光标位置，仅非活动选区时回退到 `'<`/`'>`。
+- 预防：测试必须覆盖旧 marks 为 L3-L5、当前 active Visual 为 L8-L8 时，最终引用应为 L8-L8。
+- commitID：4d698e4
