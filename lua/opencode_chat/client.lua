@@ -29,6 +29,10 @@ function M.legacy_session_url(opts)
   return url("/api/session", opts)
 end
 
+function M.api_sessions_url(opts)
+  return url("/api/session", opts)
+end
+
 function M.message_url(session_id, opts)
   return url("/session/" .. session_id .. "/message", opts)
 end
@@ -385,7 +389,15 @@ function M.send_message(session_id, text, opts, cb)
 end
 
 function M.list_sessions(opts, cb)
-  return get_json(M.session_url(opts), cb)
+  return get_json(M.session_url(opts), function(ok, data, result)
+    if ok then
+      cb(ok, data, result, "session")
+      return
+    end
+    get_json(M.api_sessions_url(opts), function(api_ok, api_data, api_result)
+      cb(api_ok, api_data, api_result, "api")
+    end)
+  end)
 end
 
 function M.list_project_sessions(project_id, opts, cb)

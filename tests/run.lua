@@ -175,6 +175,7 @@ assert_eq(#ui.state().context, 0, "clear_context should remove all context items
 vim.api.nvim_set_current_win(code_win)
 
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should prefer current API")
+assert_eq(client.api_sessions_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session list fallback URL should target v2 API")
 assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")

@@ -38,6 +38,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json({"data": {"projects": [{"id": "test-project", "worktree": os.getcwd()}]}})
             return
         if self.path == "/session":
+            self._text("not found", 404)
+            return
+        if self.path == "/api/session":
             foreign = {
                 "id": "foreign-session",
                 "title": "Other workspace session",
