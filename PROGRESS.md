@@ -247,3 +247,10 @@
 - 方案：UI window 状态改为 `state.tabs[tabpage]` 的 tab-local panes；message/input/status buffers 和 messages/context/session/status 仍为进程级共享。当前 tab toggle 负责 reveal/focus，焦点在 Chat 内时隐藏所有 tab 的 Chat UI。
 - 预防：测试必须覆盖 tab1/tab2 同时打开 Chat、共享 messages 和 input draft，以及在一个 Chat 内 toggle 会关闭所有 tab 的 Chat panes。
 - commitID：8839a9e
+
+## 2026-06-29：Mirror 可见状态也必须全局同步
+
+- 问题：上一轮只实现了“多个已打开 Chat panes 共享内容”，但新建/切入 tab 时不会自动显示 Chat，仍不符合 file explorer 类 mirror 模式。
+- 方案：新增全局 `visible` 状态；Chat 可见时，`TabEnter`/`TabNewEntered` 自动为当前 tab 创建 Chat panes；隐藏操作关闭所有 tab 并清除 visible。关闭 Chat-only tab 时若没有其它 Chat panes，需同步清除 visible，避免切回其它 tab 又自动重开。
+- 预防：测试必须覆盖 Chat 全局可见时新 tab 自动出现 Chat mirror，而不是手动 toggle 后才出现。
+- commitID：bc3b6b9
