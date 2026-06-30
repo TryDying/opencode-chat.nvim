@@ -23,16 +23,19 @@ local function buffer_lines_or_file(bufnr, path)
 end
 
 local function visual_line_range()
-  local start_line = vim.fn.line("'<")
-  local end_line = vim.fn.line("'>")
+  local mode = vim.api.nvim_get_mode().mode
+  local is_active_visual = mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19"
+  local start_line = 0
+  local end_line = 0
+
+  if is_active_visual then
+    start_line = vim.fn.getpos("v")[2]
+    end_line = vim.fn.getpos(".")[2]
+  end
 
   if start_line <= 0 or end_line <= 0 then
-    local visual_start = vim.fn.getpos("v")[2]
-    local cursor = vim.fn.getpos(".")[2]
-    if visual_start > 0 and cursor > 0 then
-      start_line = visual_start
-      end_line = cursor
-    end
+    start_line = vim.fn.line("'<")
+    end_line = vim.fn.line("'>")
   end
 
   if start_line <= 0 or end_line <= 0 then

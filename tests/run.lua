@@ -120,6 +120,12 @@ local selection = context.selection_item(0)
 assert_eq(selection.label, "@src/example.lua#L3-L5", "selection_item should sort reversed visual marks")
 assert_eq(selection.text, "function M.add(a, b)\n  return a + b\nend", "selection_item should include selected text")
 
+vim.fn.setpos("'<", { 0, 3, 1, 0 })
+vim.fn.setpos("'>", { 0, 5, 1, 0 })
+vim.cmd("normal! 8G0V")
+assert_eq(context.selection_item(0).label, "@src/example.lua#L8-L8", "active visual selection should take precedence over stale visual marks")
+vim.cmd("normal! \027")
+
 vim.fn.setpos("'<", { 0, 0, 0, 0 })
 vim.fn.setpos("'>", { 0, 0, 0, 0 })
 vim.cmd("normal! ggVjj")
@@ -129,7 +135,7 @@ assert_eq(ui.state().context[#ui.state().context].label, "@src/example.lua#L1-L3
 assert_eq(vim.api.nvim_get_current_win(), ui.state().input_win, "visual append should focus opencode input")
 assert_true(vim.api.nvim_get_mode().mode ~= "v" and vim.api.nvim_get_mode().mode ~= "V", "visual append should leave visual mode")
 ui.consume_context()
-vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+vim.cmd("normal! \027")
 
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should prefer current API")
 assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")
