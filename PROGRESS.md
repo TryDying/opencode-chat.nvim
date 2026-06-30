@@ -254,3 +254,10 @@
 - 方案：新增全局 `visible` 状态；Chat 可见时，`TabEnter`/`TabNewEntered` 自动为当前 tab 创建 Chat panes；隐藏操作关闭所有 tab 并清除 visible。关闭 Chat-only tab 时若没有其它 Chat panes，需同步清除 visible，避免切回其它 tab 又自动重开。
 - 预防：测试必须覆盖 Chat 全局可见时新 tab 自动出现 Chat mirror，而不是手动 toggle 后才出现。
 - commitID：bc3b6b9
+
+## 2026-07-01：Provider 配置不能依赖 Lua 标识符语法
+
+- 问题：真实 provider ID 可能包含 `-`（如 `opencode-go`），若文档和配置只展示 `provider = { ... }` 形式，用户容易误以为这类 provider 无法配置。
+- 方案：配置归一化支持 array-style provider 条目 `{ id = "opencode-go", ... }`，同时文档说明也可使用 `["opencode-go"] = { ... }`。
+- 预防：测试必须覆盖含连字符 provider ID 的模型选择，避免后续重构把 provider ID 限制回 Lua bare key。
+- commitID：1dad14d
