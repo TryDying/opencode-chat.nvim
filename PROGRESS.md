@@ -205,3 +205,10 @@
 - 方案：`session_matches_project` 改为 directory/root 优先；当 session 和当前 root 都有目录信息时必须目录相等，只有缺少目录信息时才回退 projectID。
 - 预防：fixture 中 foreign session 必须使用与当前 session 相同的 projectID 但不同 directory，测试必须确保它被过滤掉。
 - commitID：df90f38
+
+## 2026-06-29：Session 管理应贴近 picker 内操作
+
+- 问题：用独立全局快捷键重命名 session 不直观，且 session picker 只能选择不能删除，管理历史会话不方便。
+- 方案：session picker 增加 item-level actions：选中项按 `r` 重命名，按 `d` 后确认删除；新增 session 删除 client/server/command 路径，并让 picker 在操作后刷新。
+- 预防：测试必须覆盖 picker 内 `r` 重命名、`d` 确认删除、DELETE 请求落到 fake server，以及推荐 keymap 不再注册 `<leader>Xr`。
+- commitID：72c2365
