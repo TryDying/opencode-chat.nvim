@@ -46,17 +46,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/session":
             self._text("not found", 404)
             return
+        foreign = {
+            "id": "foreign-session",
+            "title": "Other workspace session",
+            "projectID": "other-project",
+            "directory": "/tmp/other-workspace",
+        }
         if self.path == "/api/session":
-            foreign = {
-                "id": "foreign-session",
-                "title": "Other workspace session",
-                "projectID": "other-project",
-                "directory": "/tmp/other-workspace",
-            }
             self._json({"data": {"items": SESSIONS + [foreign]}})
             return
         if self.path == "/project/test-project/session":
-            self._json({"data": {"sessions": []}})
+            self._json({"data": {"sessions": SESSIONS + [foreign]}})
             return
         match = re.match(r"^/session/([^/]+)/message$", self.path)
         if match:

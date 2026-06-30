@@ -28,6 +28,27 @@ local function normalize_path(value)
   return vim.fs.normalize(value)
 end
 
+local function session_project_id(session)
+  if type(session) ~= "table" then
+    return nil
+  end
+  return session.projectID
+    or session.projectId
+    or session.project_id
+    or (type(session.project) == "table" and (session.project.id or session.project.projectID or session.project.projectId or session.project.project_id))
+end
+
+local function session_directory(session)
+  if type(session) ~= "table" then
+    return nil
+  end
+  return session.directory
+    or session.path
+    or session.worktree
+    or session.cwd
+    or (type(session.project) == "table" and (session.project.directory or session.project.path or session.project.worktree or session.project.cwd))
+end
+
 function M.state()
   return state
 end
@@ -40,8 +61,8 @@ local function remember_session(session_id, data)
   state.sessions[session_id] = vim.tbl_extend("force", state.sessions[session_id] or {}, {
     id = session_id,
     title = raw.title or session_id,
-    projectID = raw.projectID or raw.projectId or raw.project_id or state.project_id,
-    directory = raw.directory or raw.path or raw.worktree or raw.cwd or state.root,
+    projectID = session_project_id(raw) or state.project_id,
+    directory = session_directory(raw) or state.root,
     model = config.current_model(),
   })
 end
@@ -50,11 +71,11 @@ local function session_matches_project(session)
   if type(session) ~= "table" then
     return false
   end
-  local project_id = session.projectID or session.projectId or session.project_id
+  local project_id = session_project_id(session)
   if state.project_id and project_id == state.project_id then
     return true
   end
-  local session_dir = normalize_path(session.directory or session.path or session.worktree or session.cwd)
+  local session_dir = normalize_path(session_directory(session))
   local current_root = normalize_path(state.root)
   return session_dir ~= nil and current_root ~= nil and session_dir == current_root
 end
@@ -370,7 +391,7 @@ function M.list_sessions(cb)
 
     if state.project_id then
       client.list_project_sessions(state.project_id, opts, function(project_ok, project_data, project_result)
-        local project_sessions = collect_sessions(project_data, false)
+        local project_sessions = collect_sessions(project_data, true)
         if project_ok and #project_sessions > 0 then
           finish_with_cache(merge_sessions(project_sessions, cached_sessions()), true, project_result)
           return
