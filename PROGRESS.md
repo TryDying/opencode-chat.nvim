@@ -170,3 +170,10 @@
 - 方案：统一提取 session list payload，兼容多种包装和 id/project/path 字段名；本进程创建的 session 缓存补齐当前 project/root，便于 API 空列表时 fallback。
 - 预防：fake opencode 的 project session 响应改为 `data.sessions` 包装，测试必须继续覆盖 session picker 能显示当前 project sessions 且过滤其它 workspace。
 - commitID：c9f6028
+
+## 2026-06-29：Project sessions 为空也必须 fallback
+
+- 问题：project session API 返回 200 但空列表时，逻辑把它当成功终态，直接展示 `(empty)`，不会再查全局 `/session`；同时 `/project` 的 wrapped 响应也可能导致 project id 解析不稳。
+- 方案：增强 `/project` 列表解析；project sessions 成功但为空时继续查询全局 sessions，按当前 project/root 过滤并与缓存去重合并。
+- 预防：fake opencode 让 `/project/:id/session` 返回空、`/session` 返回 wrapped items，测试必须仍能在 session picker 中看到当前 project sessions 且过滤 foreign session。
+- commitID：f407c54
