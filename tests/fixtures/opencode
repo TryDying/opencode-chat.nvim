@@ -3,9 +3,11 @@ import argparse
 import http.server
 import json
 import os
+import queue
 import re
 import signal
 import sys
+import threading
 import time
 
 
@@ -13,6 +15,8 @@ SESSION_COUNTER = 0
 SESSIONS = []
 MESSAGES = {}
 ABORTED = {}
+SUBSCRIBERS = []
+SUBSCRIBERS_LOCK = threading.Lock()
 
 
 def text_part(message_id, text):
@@ -26,6 +30,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path == "/doc":
             self._json({"openapi": "3.1.0"})
+            return
+        if self.path == "/event/subscribe":
+            self._events()
             return
         if self.path == "/project":
             self._json([{"id": "test-project", "worktree": os.getcwd()}])
@@ -118,6 +125,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 reply_text = "已改好：src/example.lua 中 M.add(a, b) 现在返回 a - b。"
             else:
                 reply_text = "fake reply: " + text
+                self._stream_reply(session_id, reply_text)
             assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", reply_text)]}
             MESSAGES[session_id] = [user, assistant]
             self._json(assistant)
@@ -169,6 +177,60 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *_args):
         return
+
+    def _events(self):
+        subscriber = queue.Queue()
+        with SUBSCRIBERS_LOCK:
+            SUBSCRIBERS.append(subscriber)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            self._write_event({"id": "connected", "type": "server.connected", "properties": {}})
+            while True:
+                try:
+                    event = subscriber.get(timeout=10)
+                except queue.Empty:
+                    event = {"id": "heartbeat", "type": "server.heartbeat", "properties": {}}
+                self._write_event(event)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            with SUBSCRIBERS_LOCK:
+                if subscriber in SUBSCRIBERS:
+                    SUBSCRIBERS.remove(subscriber)
+
+    def _write_event(self, event):
+        payload = json.dumps(event, ensure_ascii=False).encode("utf-8")
+        self.wfile.write(b"event: message\n")
+        self.wfile.write(b"data: " + payload + b"\n\n")
+        self.wfile.flush()
+
+    def _broadcast(self, event):
+        with SUBSCRIBERS_LOCK:
+            subscribers = list(SUBSCRIBERS)
+        for subscriber in subscribers:
+            subscriber.put(event)
+
+    def _stream_reply(self, session_id, text):
+        with SUBSCRIBERS_LOCK:
+            has_subscribers = bool(SUBSCRIBERS)
+        if not has_subscribers:
+            return
+        chunks = [text[:10], text[10:25], text[25:]]
+        for index, chunk in enumerate(chunks):
+            if not chunk:
+                continue
+            self._broadcast({
+                "id": f"assistant-message-part-{index}",
+                "type": "message.part.delta",
+                "properties": {
+                    "sessionID": session_id,
+                    "part": {"id": "assistant-message-part", "type": "text", "text": chunk},
+                },
+            })
+            time.sleep(0.05)
 
 
 def main():

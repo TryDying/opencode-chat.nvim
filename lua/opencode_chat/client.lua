@@ -76,16 +76,32 @@ end
 
 function M.subscribe_events(opts, on_event)
   opts = opts or {}
+  local data_lines = {}
+  local function dispatch()
+    if #data_lines == 0 then
+      return
+    end
+    local payload = table.concat(data_lines, "\n")
+    data_lines = {}
+    if payload == "" then
+      return
+    end
+    local ok, event = pcall(vim.json.decode, payload)
+    if ok and type(event) == "table" and on_event then
+      on_event(event)
+    end
+  end
   local job_id = vim.fn.jobstart({ "curl", "-sS", "-N", M.event_subscribe_url(opts) }, {
     stdout_buffered = false,
     stderr_buffered = false,
     on_stdout = function(_, data)
       for _, line in ipairs(data or {}) do
-        local payload = line:match("^data:%s*(.+)$")
-        if payload and payload ~= "" then
-          local ok, event = pcall(vim.json.decode, payload)
-          if ok and type(event) == "table" and on_event then
-            on_event(event)
+        if line == "" then
+          dispatch()
+        else
+          local payload = line:match("^data:%s?(.*)$")
+          if payload then
+            table.insert(data_lines, payload)
           end
         end
       end
@@ -96,6 +112,7 @@ function M.subscribe_events(opts, on_event)
   end
   return {
     cancel = function()
+      dispatch()
       pcall(function()
         vim.fn.jobstop(job_id)
       end)

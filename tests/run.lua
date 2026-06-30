@@ -211,6 +211,11 @@ opencode.submit()
 local prompt_file = tmp .. "/.opencode-chat-prompt.jsonl"
 local session_file = tmp .. "/.opencode-chat-session.jsonl"
 assert_true(wait_for(function()
+  local messages = ui.state().messages
+  local last = messages[#messages]
+  return opencode._request.busy == true and last and last.role == "Assistant" and last.text ~= "Thinking..." and last.text:match("fake reply") ~= nil
+end, 3000), "assistant reply should stream before the request completes")
+assert_true(wait_for(function()
   return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session-1"
 end, 5000), "submit should create session and send prompt to fake headless server")
 
@@ -233,7 +238,7 @@ assert_true(sent_text:match("这是啥") ~= nil, "prompt should include input te
 
 assert_true(wait_for(function()
   local messages = ui.state().messages
-  return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("fake reply") ~= nil
+  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("fake reply") ~= nil
 end, 3000), "native UI should render assistant reply")
 assert_eq(ui.input_text(), "", "input buffer should be cleared after submit")
 

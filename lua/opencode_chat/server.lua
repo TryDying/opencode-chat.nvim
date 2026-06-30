@@ -138,15 +138,36 @@ function M.ensure_started(startpath, cb)
   end)
 end
 
+local function event_session_id(event)
+  local props = event and event.properties
+  if type(props) ~= "table" then
+    return nil
+  end
+  return props.sessionID or props.sessionId or props.session_id or (props.session and props.session.id) or (props.message and props.message.sessionID)
+end
+
 local function text_from_event(event)
-  if type(event) ~= "table" or event.type ~= "message.part.updated" then
-    return ""
+  if type(event) ~= "table" then
+    return "", false
+  end
+  if event.type ~= "message.part.updated" and event.type ~= "message.part.delta" then
+    return "", false
   end
   local part = event.properties and event.properties.part
-  if type(part) ~= "table" or part.type ~= "text" then
-    return ""
+  if type(part) == "table" and part.type ~= nil and part.type ~= "text" then
+    return "", false
   end
-  return part.text or ""
+  if type(part) == "table" and type(part.text) == "string" then
+    return part.text, event.type == "message.part.delta"
+  end
+  local props = event.properties or {}
+  if type(props.text) == "string" then
+    return props.text, event.type == "message.part.delta"
+  end
+  if type(props.delta) == "string" then
+    return props.delta, true
+  end
+  return "", false
 end
 
 function M.send(text, startpath, cb, events)
@@ -163,10 +184,20 @@ function M.send(text, startpath, cb, events)
       return
     end
     local model = config.current_model()
+    local streamed_text = ""
     local stream = client.subscribe_events({ host = cfg.host, port = current.port }, function(event)
-      local delta = text_from_event(event)
-      if delta ~= "" and events and events.on_delta then
-        events.on_delta(delta)
+      local session_id = event_session_id(event)
+      if session_id and session_id ~= current.session_id then
+        return
+      end
+      local text_delta, append = text_from_event(event)
+      if text_delta ~= "" and events and events.on_delta then
+        if append then
+          streamed_text = streamed_text .. text_delta
+        else
+          streamed_text = text_delta
+        end
+        events.on_delta(streamed_text)
       end
     end)
     local send_handle
