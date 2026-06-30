@@ -233,3 +233,10 @@
 - 方案：记录打开 Chat 前最近的普通代码 buffer；最后一个 tab 清理 Chat panes 时优先重新加载并恢复该 buffer，只有找不到普通 buffer 时才创建空窗口。
 - 预防：测试必须覆盖单 tab 场景：关闭唯一代码窗口后，Chat panes 自动清理并恢复原代码 buffer，而不是空白 buffer。
 - commitID：c6be2d1
+
+## 2026-06-29：最后代码窗口关闭后应允许 Neovim 退出
+
+- 问题：用户在最后一个代码窗口执行 `:q` 时，Chat panes 是附属窗口，不应恢复代码 buffer 或留下空白 buffer；同时直接逐个关闭 Chat window 会因最后窗口限制中断后续退出逻辑。
+- 方案：多 tab 时仍关闭 Chat-only tab；最后一个 tab 只剩 Chat panes 时执行 `quitall!`，并将普通 `hide()` 的 window close 包进 `pcall`，避免最后窗口错误打断流程。
+- 预防：测试必须用子进程覆盖最后一个 tab 场景，关闭唯一代码窗口后 Neovim 应正常退出；若未退出则子进程 `cquit` 失败。
+- commitID：8c4c97c
