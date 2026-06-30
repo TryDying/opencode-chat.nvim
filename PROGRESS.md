@@ -149,3 +149,10 @@
 - 方案：新增统一 `append_context` 入口，Normal 追加当前文件、Visual 追加选区，并按引用去重且保持代码 pane 焦点；Context 区编号展示，支持按编号删除、清空和消息区 `d`/`D` 快捷操作。
 - 预防：测试必须覆盖 Normal/Visual `append_context` 焦点保持、重复追加去重、Context 单项删除和清空。
 - commitID：93b7b95
+
+## 2026-06-29：Chat pane buffer 需要稳定命名
+
+- 问题：Chat panel 使用未命名 scratch/no-file buffer，部分状态栏或 winbar 插件会把 pane 标成 `scratch`，造成 UI 噪音。
+- 方案：为 message/input/status 三个临时 buffer 设置稳定名称 `opencode-chat://messages`、`opencode-chat://input`、`opencode-chat://status`。
+- 预防：测试必须断言三个 Chat pane buffer 名称稳定，避免回退成未命名 scratch buffer。
+- commitID：31ffc3e
