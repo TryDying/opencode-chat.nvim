@@ -7,6 +7,7 @@ local state = {
   items = {},
   line_items = {},
   on_select = nil,
+  actions = {},
 }
 
 local function valid_win(win_id)
@@ -35,6 +36,34 @@ function M.close()
   state.items = {}
   state.line_items = {}
   state.on_select = nil
+  state.actions = {}
+end
+
+local function item_at_cursor()
+  if not valid_win(state.win) then
+    return nil
+  end
+  local ok, cursor = pcall(vim.api.nvim_win_get_cursor, state.win)
+  if not ok then
+    return nil
+  end
+  return state.line_items[cursor[1]]
+end
+
+local function run_action(key)
+  local action = state.actions and state.actions[key]
+  local item = item_at_cursor()
+  if action and item then
+    action(item)
+  end
+end
+
+local function set_action_keymaps(buf)
+  for key, _ in pairs(state.actions or {}) do
+    vim.keymap.set("n", key, function()
+      run_action(key)
+    end, { buffer = buf, silent = true })
+  end
 end
 
 local function show_nui(opts)
@@ -45,12 +74,14 @@ local function show_nui(opts)
 
   local lines = {}
   local current_group
+  state.line_items = {}
   for _, item in ipairs(state.items) do
     if item.group and item.group ~= current_group then
       current_group = item.group
       table.insert(lines, Menu.separator(item.group))
     end
     table.insert(lines, Menu.item((item.selected and "✓ " or "  ") .. item.label, { value = item }))
+    state.line_items[#lines] = item
   end
   if #lines == 0 then
     table.insert(lines, Menu.item("(empty)", { value = nil }))
@@ -92,6 +123,7 @@ local function show_nui(opts)
   state.menu:mount()
   state.win = state.menu.winid
   state.buf = state.menu.bufnr
+  set_action_keymaps(state.buf)
   pcall(vim.cmd, "stopinsert")
   return true
 end
@@ -113,6 +145,7 @@ function M.show(opts)
   M.close()
   state.items = opts.items or {}
   state.on_select = opts.on_select
+  state.actions = opts.actions or {}
   if show_nui(opts) then
     return
   end
@@ -161,6 +194,7 @@ function M.show(opts)
   end, { buffer = state.buf, silent = true })
   vim.keymap.set("n", "q", M.close, { buffer = state.buf, silent = true })
   vim.keymap.set("n", "<Esc>", M.close, { buffer = state.buf, silent = true })
+  set_action_keymaps(state.buf)
   vim.keymap.set("n", "<LeftMouse>", function()
     local pos = vim.fn.getmousepos()
     if pos.winid == state.win then
@@ -176,6 +210,14 @@ end
 
 function M.state()
   return state
+end
+
+function M.current_item()
+  return item_at_cursor()
+end
+
+function M.run_action(key)
+  run_action(key)
 end
 
 return M

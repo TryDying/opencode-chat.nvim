@@ -49,6 +49,10 @@ function M.setup(api)
     api.rename_session(opts.args)
   end, { nargs = "*", force = true })
 
+  vim.api.nvim_create_user_command("OpencodeDeleteSession", function(opts)
+    api.delete_session(opts.args)
+  end, { nargs = 1, force = true })
+
   vim.api.nvim_create_user_command("OpencodeModels", function()
     api.show_models()
   end, { force = true })

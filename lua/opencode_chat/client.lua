@@ -9,6 +9,12 @@ local function url(path, opts)
   return string.format("http://%s:%s%s", host, port, path)
 end
 
+local function query_value(value)
+  return tostring(value):gsub("([^%w%-%._~])", function(char)
+    return string.format("%%%02X", string.byte(char))
+  end)
+end
+
 local function path_segment(value)
   return tostring(value):gsub("([^%w%-%._~])", function(char)
     return string.format("%%%02X", string.byte(char))
@@ -49,6 +55,14 @@ end
 
 function M.rename_session_url(session_id, opts)
   return url("/session/" .. session_id, opts)
+end
+
+function M.delete_session_url(session_id, opts)
+  local target = "/session/" .. path_segment(session_id)
+  if opts and opts.directory and opts.directory ~= "" then
+    target = target .. "?directory=" .. query_value(opts.directory)
+  end
+  return url(target, opts)
 end
 
 function M.v1_abort_url(session_id, opts)
@@ -221,6 +235,18 @@ local function patch_json(target_url, payload, cb)
     "Content-Type: application/json",
     "--data",
     vim.json.encode(payload),
+  }), function(result)
+    finish(result, cb)
+  end)
+end
+
+local function delete_json(target_url, cb)
+  return M.run(with_status({
+    "curl",
+    "-sS",
+    "-X",
+    "DELETE",
+    target_url,
   }), function(result)
     finish(result, cb)
   end)
@@ -433,6 +459,10 @@ end
 
 function M.rename_session(session_id, title, opts, cb)
   return patch_json(M.rename_session_url(session_id, opts), { title = title }, cb)
+end
+
+function M.delete_session(session_id, opts, cb)
+  return delete_json(M.delete_session_url(session_id, opts), cb)
 end
 
 function M.extract_message_role_text(message)

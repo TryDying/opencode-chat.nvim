@@ -87,6 +87,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         self._text("not found", 404)
 
+    def do_DELETE(self):
+        global SESSIONS, MESSAGES
+        match = re.match(r"^/session/([^/?]+)", self.path)
+        if match:
+            session_id = match.group(1)
+            before = len(SESSIONS)
+            SESSIONS = [session for session in SESSIONS if session.get("id") != session_id]
+            MESSAGES.pop(session_id, None)
+            with open(os.path.join(os.getcwd(), ".opencode-chat-delete.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionID": session_id}, ensure_ascii=False) + "\n")
+            self._json(before != len(SESSIONS))
+            return
+        self._text("not found", 404)
+
     def do_POST(self):
         global SESSION_COUNTER, SESSIONS, MESSAGES, ABORTED
         length = int(self.headers.get("content-length", "0"))

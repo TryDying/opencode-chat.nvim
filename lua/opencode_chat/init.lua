@@ -311,14 +311,23 @@ function M.show_sessions()
           label = label,
           selected = session.id == current,
           value = session.id,
+          session = session,
         })
       end
       picker.show({
-        title = "opencode sessions (:OpencodeRenameSession / rename_session keymap)",
+        title = "opencode sessions (<CR> select, r rename, d delete)",
         items = items,
         on_select = function(item)
           M.select_session(item.value)
         end,
+        actions = {
+          r = function(item)
+            M.rename_session(nil, item.value)
+          end,
+          d = function(item)
+            M.delete_session(item.value, item.label)
+          end,
+        },
       })
     end)
   end)
@@ -344,12 +353,12 @@ function M.select_session(session_id)
   end)
 end
 
-function M.rename_session(title)
+function M.rename_session(title, session_id)
   if request.busy then
     notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
     return
   end
-  local current = server.state().session_id
+  local current = session_id or server.state().session_id
   if not current then
     notify_error("no active opencode session")
     return
@@ -366,6 +375,9 @@ function M.rename_session(title)
           return
         end
         ui.add_message("System", "Session renamed: " .. new_title)
+        if picker.state().buf then
+          M.show_sessions()
+        end
       end)
     end)
   end
@@ -375,6 +387,34 @@ function M.rename_session(title)
   end
   local session = server.state().sessions[current] or {}
   vim.ui.input({ prompt = "Session title: ", default = session.title or "" }, apply)
+end
+
+function M.delete_session(session_id, label)
+  if request.busy then
+    notify_error("opencode is still responding; use <C-c> or :OpencodeCancel first")
+    return
+  end
+  if not session_id or session_id == "" then
+    notify_error("session id is required")
+    return
+  end
+  vim.ui.input({ prompt = "Delete session " .. tostring(label or session_id) .. "? Type y to confirm: " }, function(answer)
+    if vim.trim(answer or "") ~= "y" then
+      return
+    end
+    server.delete_session(session_id, function(ok, _data, err)
+      vim.schedule(function()
+        if not ok then
+          notify_error("opencode delete session failed: " .. tostring(err))
+          return
+        end
+        ui.add_message("System", "Session deleted: " .. tostring(label or session_id))
+        if picker.state().buf then
+          M.show_sessions()
+        end
+      end)
+    end)
+  end)
 end
 
 function M.show_models()

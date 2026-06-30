@@ -80,7 +80,6 @@ opencode.setup({
     append_selection = "<M-->",
     sessions = "<leader>Xl",
     new_session = "<leader>Xn",
-    rename_session = "<leader>Xr",
     models = "<leader>Xm",
     variants = "<leader>Xt",
   },
@@ -95,6 +94,7 @@ assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registe
 assert_true(vim.fn.exists(":OpencodeCancel") == 2, "cancel command should be registered")
 assert_true(vim.fn.exists(":OpencodeSessions") == 2, "sessions command should be registered")
 assert_true(vim.fn.exists(":OpencodeRenameSession") == 2, "rename session command should be registered")
+assert_true(vim.fn.exists(":OpencodeDeleteSession") == 2, "delete session command should be registered")
 assert_true(vim.fn.exists(":OpencodeModels") == 2, "models command should be registered")
 assert_true(vim.fn.exists(":OpencodeVariants") == 2, "variants command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
@@ -103,7 +103,7 @@ assert_true(vim.fn.maparg("<leader>Xe", "n") ~= "", "normal append context keyma
 assert_true(vim.fn.maparg("<leader>Xe", "v") ~= "", "visual append context keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xl", "n") ~= "", "session list keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xn", "n") ~= "", "new session keymap should be mapped")
-assert_true(vim.fn.maparg("<leader>Xr", "n") ~= "", "rename session keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xr", "n") == "", "rename session keymap should not be mapped by recommended test config")
 assert_true(vim.fn.maparg("<leader>Xm", "n") ~= "", "model picker keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xt", "n") ~= "", "variant picker keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xv", "n") == "", "old variant keymap should not be mapped")
@@ -180,6 +180,7 @@ assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
 assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc", "rename URL should target session update API")
+assert_eq(client.delete_session_url("abc", { host = "127.0.0.1", port = 12345, directory = "/tmp/a b" }), "http://127.0.0.1:12345/session/abc?directory=%2Ftmp%2Fa%20b", "delete URL should include encoded directory query")
 assert_eq(client.current_project_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/current", "current project URL should target project/current API")
 assert_eq(client.project_sessions_url("project", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project/session", "project sessions URL should target project-scoped sessions")
 assert_eq(client.project_sessions_url("project/with slash", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project%2Fwith%20slash/session", "project id should be URL encoded")
@@ -342,6 +343,46 @@ local session_picker_lines = table.concat(vim.api.nvim_buf_get_lines(picker.stat
 assert_true(session_picker_lines:match("test%-session%-1") ~= nil, "session picker should include first session")
 assert_true(session_picker_lines:match("Renamed test session") ~= nil, "session picker should include renamed latest session")
 assert_true(session_picker_lines:match("foreign%-session") == nil, "session picker should filter out sessions from other projects")
+
+local function picker_line_matching(pattern)
+  for line, text in ipairs(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false)) do
+    if text:match(pattern) then
+      return line
+    end
+  end
+end
+
+local original_input = vim.ui.input
+vim.ui.input = function(opts, cb)
+  if (opts.prompt or ""):match("Session title") then
+    cb("Picker renamed session")
+  elseif (opts.prompt or ""):match("Delete session") then
+    cb("y")
+  else
+    original_input(opts, cb)
+  end
+end
+
+vim.api.nvim_set_current_win(picker.state().win)
+vim.api.nvim_win_set_cursor(picker.state().win, { assert(picker_line_matching("Renamed test session"), "renamed session line should exist"), 0 })
+picker.run_action("r")
+assert_true(wait_for(function()
+  return server.state().sessions["test-session-2"] and server.state().sessions["test-session-2"].title == "Picker renamed session"
+end, 3000), "session picker r action should rename selected session")
+
+assert_true(wait_for(function()
+  return picker.state().buf and vim.api.nvim_buf_is_valid(picker.state().buf) and picker_line_matching("Picker renamed session") ~= nil
+end, 1000), "session picker should refresh after rename")
+vim.api.nvim_set_current_win(picker.state().win)
+vim.api.nvim_win_set_cursor(picker.state().win, { assert(picker_line_matching("Picker renamed session"), "deletable session line should exist"), 0 })
+picker.run_action("d")
+assert_true(wait_for(function()
+  return vim.fn.filereadable(tmp .. "/.opencode-chat-delete.jsonl") == 1 and server.state().sessions["test-session-2"] == nil
+end, 3000), "session picker d action should delete selected session after confirmation")
+assert_true(wait_for(function()
+  return picker.state().buf and vim.api.nvim_buf_is_valid(picker.state().buf) and picker_line_matching("Picker renamed session") == nil
+end, 1000), "session picker should refresh after delete")
+vim.ui.input = original_input
 picker.close()
 opencode.select_session("test-session-1")
 assert_true(wait_for(function()

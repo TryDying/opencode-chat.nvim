@@ -461,4 +461,29 @@ function M.rename_session(session_id, title, cb)
   end)
 end
 
+function M.delete_session(session_id, cb)
+  if not session_id or session_id == "" then
+    cb(false, nil, "session id is required")
+    return
+  end
+  M.ensure_server(nil, function(ok, _current, err)
+    if not ok then
+      cb(false, nil, err)
+      return
+    end
+    client.delete_session(session_id, { host = config.get().host, port = state.port, directory = state.root }, function(delete_ok, data, result)
+      if not delete_ok then
+        cb(false, nil, client.format_error(result, "failed to delete session"))
+        return
+      end
+      state.sessions[session_id] = nil
+      if state.session_id == session_id then
+        state.session_id = nil
+        state.api_style = nil
+      end
+      cb(true, data)
+    end)
+  end)
+end
+
 return M
