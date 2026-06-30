@@ -6,6 +6,7 @@ local state = {
   message_win = nil,
   status_win = nil,
   input_win = nil,
+  tabs = {},
   message_buf = nil,
   status_buf = nil,
   input_buf = nil,
@@ -40,6 +41,45 @@ local function is_chat_win(win)
     return true
   end
   return is_chat_buf(vim.api.nvim_win_get_buf(win))
+end
+
+local function tab_key(tab)
+  return tab or vim.api.nvim_get_current_tabpage()
+end
+
+local function panes_for(tab)
+  return state.tabs[tab_key(tab)]
+end
+
+local function panes_valid(panes)
+  return panes and valid_win(panes.message_win) and valid_win(panes.input_win) and valid_win(panes.status_win)
+end
+
+local function set_current_panes(panes)
+  state.message_win = panes and panes.message_win or nil
+  state.input_win = panes and panes.input_win or nil
+  state.status_win = panes and panes.status_win or nil
+end
+
+local function sync_current_panes()
+  local key = tab_key()
+  local panes = state.tabs[key]
+  if panes and not panes_valid(panes) then
+    state.tabs[key] = nil
+    panes = nil
+  end
+  set_current_panes(panes)
+  return panes
+end
+
+local function any_panes_visible()
+  for key, panes in pairs(state.tabs) do
+    if panes_valid(panes) then
+      return true, key, panes
+    end
+    state.tabs[key] = nil
+  end
+  return false
 end
 
 local function layout()
@@ -129,7 +169,10 @@ end
 
 local function open_windows()
   ensure_buffers()
-  if valid_win(state.message_win) and valid_win(state.status_win) and valid_win(state.input_win) then
+  local key = tab_key()
+  local existing = panes_for(key)
+  if panes_valid(existing) then
+    set_current_panes(existing)
     return
   end
 
@@ -140,34 +183,38 @@ local function open_windows()
   vim.o.winminheight = 0
   vim.o.equalalways = false
   vim.cmd("botright vertical " .. width .. "new")
-  state.message_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(state.message_win, state.message_buf)
-  vim.wo[state.message_win].winfixwidth = true
-  vim.wo[state.message_win].wrap = true
-  set_panel_win_options(state.message_win)
-  if total_height and total_height > 0 and total_height < vim.api.nvim_win_get_height(state.message_win) then
-    vim.api.nvim_win_set_height(state.message_win, total_height)
+  local panes = {}
+  panes.message_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(panes.message_win, state.message_buf)
+  vim.wo[panes.message_win].winfixwidth = true
+  vim.wo[panes.message_win].wrap = true
+  set_panel_win_options(panes.message_win)
+  if total_height and total_height > 0 and total_height < vim.api.nvim_win_get_height(panes.message_win) then
+    vim.api.nvim_win_set_height(panes.message_win, total_height)
   end
 
-  vim.api.nvim_set_current_win(state.message_win)
+  vim.api.nvim_set_current_win(panes.message_win)
   vim.cmd("belowright " .. input_height .. "split")
-  state.input_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(state.input_win, state.input_buf)
-  vim.wo[state.input_win].winfixheight = true
-  set_panel_win_options(state.input_win)
-  vim.api.nvim_win_set_height(state.input_win, input_height)
+  panes.input_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(panes.input_win, state.input_buf)
+  vim.wo[panes.input_win].winfixheight = true
+  set_panel_win_options(panes.input_win)
+  vim.api.nvim_win_set_height(panes.input_win, input_height)
 
-  vim.api.nvim_set_current_win(state.input_win)
+  vim.api.nvim_set_current_win(panes.input_win)
   vim.cmd("belowright 1split")
-  state.status_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(state.status_win, state.status_buf)
-  vim.wo[state.status_win].winfixheight = true
-  set_panel_win_options(state.status_win)
-  vim.api.nvim_win_set_height(state.status_win, 1)
+  panes.status_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(panes.status_win, state.status_buf)
+  vim.wo[panes.status_win].winfixheight = true
+  set_panel_win_options(panes.status_win)
+  vim.api.nvim_win_set_height(panes.status_win, 1)
 
-  if cfg.message_height and cfg.message_height > 0 and valid_win(state.message_win) then
-    pcall(vim.api.nvim_win_set_height, state.message_win, cfg.message_height)
+  if cfg.message_height and cfg.message_height > 0 and valid_win(panes.message_win) then
+    pcall(vim.api.nvim_win_set_height, panes.message_win, cfg.message_height)
   end
+
+  state.tabs[key] = panes
+  set_current_panes(panes)
 
   vim.o.winminheight = old_winminheight
   vim.o.equalalways = old_equalalways
@@ -220,13 +267,18 @@ function M.render()
 
   set_lines(state.message_buf, lines)
 
-  if valid_win(state.message_win) then
-    local last = math.max(vim.api.nvim_buf_line_count(state.message_buf), 1)
-    pcall(vim.api.nvim_win_set_cursor, state.message_win, { last, 0 })
-    pcall(vim.api.nvim_win_call, state.message_win, function()
-      vim.cmd("normal! zb")
-    end)
+  local last = math.max(vim.api.nvim_buf_line_count(state.message_buf), 1)
+  for key, panes in pairs(state.tabs) do
+    if panes_valid(panes) then
+      pcall(vim.api.nvim_win_set_cursor, panes.message_win, { last, 0 })
+      pcall(vim.api.nvim_win_call, panes.message_win, function()
+        vim.cmd("normal! zb")
+      end)
+    else
+      state.tabs[key] = nil
+    end
   end
+  sync_current_panes()
 end
 
 function M.render_status()
@@ -280,15 +332,18 @@ function M.hide()
   pcall(function()
     require("opencode_chat.picker").close()
   end)
-  if valid_win(state.message_win) then
-    pcall(vim.api.nvim_win_close, state.message_win, true)
+  for _, panes in pairs(state.tabs) do
+    if valid_win(panes.message_win) then
+      pcall(vim.api.nvim_win_close, panes.message_win, true)
+    end
+    if valid_win(panes.status_win) then
+      pcall(vim.api.nvim_win_close, panes.status_win, true)
+    end
+    if valid_win(panes.input_win) then
+      pcall(vim.api.nvim_win_close, panes.input_win, true)
+    end
   end
-  if valid_win(state.status_win) then
-    pcall(vim.api.nvim_win_close, state.status_win, true)
-  end
-  if valid_win(state.input_win) then
-    pcall(vim.api.nvim_win_close, state.input_win, true)
-  end
+  state.tabs = {}
   state.message_win = nil
   state.status_win = nil
   state.input_win = nil
@@ -313,10 +368,9 @@ function M.close_if_only_chat_windows()
     require("opencode_chat.picker").close()
   end)
   if #vim.api.nvim_list_tabpages() > 1 then
+    state.tabs[tab_key()] = nil
     pcall(vim.cmd, "tabclose")
-    state.message_win = nil
-    state.status_win = nil
-    state.input_win = nil
+    sync_current_panes()
     return true
   end
 
@@ -329,14 +383,15 @@ function M.is_chat_window(win)
 end
 
 function M.toggle()
-  if valid_win(state.message_win) or valid_win(state.input_win) then
+  local panes = sync_current_panes()
+  if panes_valid(panes) then
     local picker_state = require("opencode_chat.picker").state()
     if picker_state.buf and vim.api.nvim_buf_is_valid(picker_state.buf) then
       M.hide()
       return state
     end
     local current = vim.api.nvim_get_current_win()
-    if current == state.message_win or current == state.input_win or current == state.status_win then
+    if current == panes.message_win or current == panes.input_win or current == panes.status_win then
       M.hide()
     else
       M.focus_input()
@@ -413,7 +468,7 @@ end
 
 function M.add_message(role, text)
   table.insert(state.messages, { role = role, text = text })
-  if valid_win(state.message_win) or valid_win(state.input_win) then
+  if any_panes_visible() then
     M.render()
   else
     M.show({ focus = "input" })

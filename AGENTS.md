@@ -51,7 +51,8 @@ These routing rules are mandatory for this repository.
 - If all remaining windows in the current tab are opencode-chat panes, automatically close that tab when other tabs exist; in the last tab, close Chat panes and allow Neovim to quit rather than restoring a code buffer or leaving an empty buffer.
 - The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Streaming/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
 - Chat panel sizing must be configurable through `ui.width`, `ui.height`, and optional `ui.message_height`.
-- Toggle should reveal/focus first: if the panel is visible but unfocused, focus the input pane; only hide when focus is already inside the Chat panel.
+- Chat UI must support tab mirror mode: each tab may have its own Chat panes, but messages, input draft, context, session, status, and backend server state are shared within one Neovim process.
+- Toggle should reveal/focus first for the current tab: if the current tab panel is visible but unfocused, focus the input pane; only hide when focus is already inside the Chat panel, and that hide must close Chat UI in all tabs.
 - Global keymaps must be user-configurable through `keymaps`; do not hard-code or register default global mappings. Recommended examples are `<leader>Xe`, `<leader>Xl`, `<leader>Xn`, `<leader>Xm`, and `<leader>Xt`.
 - Session picker must support `r` to rename the selected session and `d` to delete the selected session after confirmation.
 - Visual-mode context append must not submit the prompt; it queues the selection reference and source text for the next submission. `append_context` should keep focus on the code pane and deduplicate context items by reference.

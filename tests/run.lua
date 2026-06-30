@@ -255,6 +255,39 @@ assert_true(vim.api.nvim_get_mode().mode ~= "i", "message pane focus should stay
 ui.focus_input()
 assert_eq(vim.api.nvim_get_current_win(), msg_state.input_win, "input pane should be focusable by keyboard")
 
+local function tab_has_chat(tab)
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if ui.is_chat_window(win) then
+      return true
+    end
+  end
+  return false
+end
+
+local mirror_tab1 = vim.api.nvim_get_current_tabpage()
+local mirror_tab1_input = ui.state().input_win
+local mirror_file = tmp .. "/src/mirror.lua"
+vim.fn.writefile({ "return 'mirror'" }, mirror_file)
+ui.add_message("System", "mirror check")
+vim.cmd("tabnew " .. vim.fn.fnameescape(mirror_file))
+local mirror_tab2 = vim.api.nvim_get_current_tabpage()
+opencode.toggle()
+assert_true(tab_has_chat(mirror_tab1), "tab1 should keep its chat mirror")
+assert_true(tab_has_chat(mirror_tab2), "tab2 should open a chat mirror")
+assert_true(table.concat(vim.api.nvim_buf_get_lines(ui.state().message_buf, 0, -1, false), "\n"):match("mirror check") ~= nil, "chat mirrors should share messages")
+ui.set_input("mirrored draft")
+vim.api.nvim_set_current_tabpage(mirror_tab1)
+assert_eq(ui.input_text(), "mirrored draft", "chat mirrors should share input draft")
+vim.api.nvim_set_current_win(mirror_tab1_input)
+opencode.toggle()
+assert_true(not tab_has_chat(mirror_tab1), "toggle hide should close chat mirror in tab1")
+assert_true(not tab_has_chat(mirror_tab2), "toggle hide should close chat mirror in tab2")
+vim.api.nvim_set_current_tabpage(mirror_tab2)
+vim.cmd("tabclose")
+vim.api.nvim_set_current_tabpage(mirror_tab1)
+opencode.toggle()
+ui.set_input("")
+
 local original_tab = vim.api.nvim_get_current_tabpage()
 local original_tab_count = #vim.api.nvim_list_tabpages()
 ui.hide()
