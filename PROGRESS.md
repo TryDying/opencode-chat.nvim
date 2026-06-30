@@ -156,3 +156,10 @@
 - 方案：为 message/input/status 三个临时 buffer 设置稳定名称 `opencode-chat://messages`、`opencode-chat://input`、`opencode-chat://status`。
 - 预防：测试必须断言三个 Chat pane buffer 名称稳定，避免回退成未命名 scratch buffer。
 - commitID：31ffc3e
+
+## 2026-06-29：Streaming 必须解析 delta 事件并按 SSE 边界派发
+
+- 问题：streaming 只识别单行 `data:` 中的 `message.part.updated`，真实 opencode 常用 `message.part.delta`，导致 UI 只能等最终 HTTP 响应后一次性显示完整回复。
+- 方案：SSE 客户端改为按空行事件边界聚合 `data:` 后解码；server 层同时支持 `message.part.delta` 增量累积和 `message.part.updated` 全量更新，并按 session 过滤事件。
+- 预防：fake opencode 必须提供 `/event/subscribe` 并发送分片 delta；测试必须断言请求完成前 assistant 文本已经开始渲染。
+- commitID：84111de
