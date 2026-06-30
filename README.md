@@ -74,10 +74,10 @@ require("opencode_chat").setup({
 
 ## 验证
 
-本仓库内置自闭环测试，使用 `VIM_PROFILE=basic` 加载你的基础 Neovim profile：
+本仓库内置自闭环测试，使用 headless Neovim 运行：
 
 ```sh
-VIM_PROFILE=basic nvim --headless -l tests/run.lua
+nvim --headless -l tests/run.lua
 ```
 
 ## 开发态启动
