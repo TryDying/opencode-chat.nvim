@@ -191,3 +191,10 @@
 - 方案：获取 project id 时优先请求 `GET /project/current`；仅不支持时回退到 `/project` 列表匹配，同时对 project/session id 做 URL 编码。
 - 预防：fake opencode 的 `/project` 列表必须包含一个错误首项，并通过 `/project/current` 返回正确 project，测试仍需保证 session picker 能显示当前 project sessions。
 - commitID：c4364cc
+
+## 2026-06-29：所有 session 来源都必须二次过滤
+
+- 问题：测试只覆盖了 fallback 全局列表过滤，没覆盖 project session endpoint 本身混入其它 workspace 的情况；真实环境下 picker 因信任 scoped endpoint 而显示了全机 sessions。
+- 方案：无论 session 来自 `/project/:id/session`、`/session` 还是 `/api/session`，统一按当前 project id/root 二次过滤；过滤逻辑兼容顶层和嵌套 `session.project` 字段。
+- 预防：fake opencode 的 project session endpoint 必须故意返回当前项目 session 加 foreign session，测试必须断言 foreign session 不出现在 picker 中。
+- commitID：6d89789
