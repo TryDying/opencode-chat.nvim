@@ -212,3 +212,10 @@
 - 方案：session picker 增加 item-level actions：选中项按 `r` 重命名，按 `d` 后确认删除；新增 session 删除 client/server/command 路径，并让 picker 在操作后刷新。
 - 预防：测试必须覆盖 picker 内 `r` 重命名、`d` 确认删除、DELETE 请求落到 fake server，以及推荐 keymap 不再注册 `<leader>Xr`。
 - commitID：72c2365
+
+## 2026-06-29：孤立 Chat panes 应自动清理
+
+- 问题：用户关闭代码窗口后，当前 tab 可能只剩 opencode-chat 的 message/input/status panes，形成无用孤立 Chat panel。
+- 方案：监听窗口关闭/切 tab 后延迟检查当前 tab；若剩余窗口全是 opencode-chat buffer/window，则先创建普通空窗口保活，再关闭所有 Chat panes。
+- 预防：测试必须在独立 tab 中关闭唯一代码窗口，并断言 Chat panes 自动消失且只留下普通非 Chat 窗口。
+- commitID：ea22654
