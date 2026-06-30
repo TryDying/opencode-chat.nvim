@@ -219,3 +219,10 @@
 - 方案：监听窗口关闭/切 tab 后延迟检查当前 tab；若剩余窗口全是 opencode-chat buffer/window，则先创建普通空窗口保活，再关闭所有 Chat panes。
 - 预防：测试必须在独立 tab 中关闭唯一代码窗口，并断言 Chat panes 自动消失且只留下普通非 Chat 窗口。
 - commitID：ea22654
+
+## 2026-06-29：多 tab 下不要为空白 buffer 保活
+
+- 问题：孤立 Chat panes 清理时总是先创建普通空窗口，导致多 tab 场景下当前 tab 被清理后仍残留一个空白 buffer。
+- 方案：当前 tab 只剩 Chat panes 且存在其它 tab 时直接关闭当前 tab；只有最后一个 tab 时才创建普通空窗口保活。
+- 预防：测试必须覆盖多 tab 场景：关闭唯一代码窗口后，当前 Chat-only tab 应消失并回到原 tab，而不是留下空白 buffer。
+- commitID：baf0359
