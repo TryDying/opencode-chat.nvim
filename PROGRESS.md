@@ -282,3 +282,10 @@
 - 方案：session 收集阶段增加用户可见性过滤，隐藏带 parent session、kind/source 标记为 subagent，或标题形如 `(@runner subagent)` 的内部会话。
 - 预防：fake server 必须返回同 project 的 subagent session，测试断言 picker 不显示其 id/title，避免再次只按 project/root 过滤。
 - commitID：4738ad1
+
+## 2026-07-01：快速答疑需要独立临时会话
+
+- 问题：用户临时追问旁支问题时，如果复用主 Chat session/context，会污染连续对话历史，也难以做到关闭后无痕。
+- 方案：新增 Quick Ask 浮动窗口，复用当前 agent/model/variant 和 opencode server，但使用独立临时 session 与独立 context；关闭或取消时删除临时 session。
+- 预防：测试必须覆盖 Quick Ask 不替换主 session、不消费主 context、多轮复用临时 session，并在关闭/取消后调用 DELETE 清理。
+- commitID：7765341
