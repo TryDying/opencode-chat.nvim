@@ -99,6 +99,7 @@ assert_true(vim.fn.exists(":OpencodeDeleteSession") == 2, "delete session comman
 assert_true(vim.fn.exists(":OpencodeModels") == 2, "models command should be registered")
 assert_true(vim.fn.exists(":OpencodeVariants") == 2, "variants command should be registered")
 assert_true(vim.fn.maparg("<M-->", "n") ~= "", "normal <M--> should be mapped")
+assert_true(vim.fn.maparg("<M-->", "i") ~= "", "insert <M--> should be mapped for toggle")
 assert_true(vim.fn.maparg("<M-->", "v") ~= "", "visual <M--> should be mapped")
 assert_true(vim.fn.maparg("<leader>Xe", "n") ~= "", "normal append context keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xe", "v") ~= "", "visual append context keymap should be mapped")

@@ -62,7 +62,7 @@ local function set_configured_keymaps(keymaps)
   end
   local opts = { noremap = true, silent = true }
   local maps = {
-    toggle = { mode = "n", rhs = function() require("opencode_chat").toggle() end, desc = "Toggle opencode chat" },
+    toggle = { mode = { "n", "i" }, rhs = function() require("opencode_chat").toggle_from_keymap() end, desc = "Toggle opencode chat" },
     append_context = { mode = { "n", "v" }, rhs = function() require("opencode_chat").append_context() end, desc = "Append context to opencode chat" },
     append_selection = { mode = "v", rhs = function() require("opencode_chat").append_selection() end, desc = "Append selection to opencode chat" },
     sessions = { mode = "n", rhs = function() require("opencode_chat").show_sessions() end, desc = "List opencode sessions" },
@@ -109,6 +109,18 @@ end
 
 function M.toggle()
   return ui.toggle()
+end
+
+function M.toggle_from_keymap()
+  local mode = vim.api.nvim_get_mode().mode
+  if mode == "i" or mode == "ic" or mode == "ix" then
+    pcall(vim.cmd, "stopinsert")
+    vim.schedule(function()
+      require("opencode_chat").toggle()
+    end)
+    return ui.state()
+  end
+  return M.toggle()
 end
 
 function M.show()

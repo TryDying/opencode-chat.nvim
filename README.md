@@ -72,7 +72,7 @@ require("opencode_chat").setup({
 
 插件默认不绑定全局快捷键；如需快捷键，请在 `keymaps` 中显式配置：
 
-- Normal `<M-->`：toggle Chat UI
+- Normal/Insert `<M-->`：toggle Chat UI；Insert 模式会先退出 insert，再执行打开/聚焦/隐藏逻辑
 - Normal/Visual `<leader>Xe`：追加当前文件或 Visual 选区上下文，保持代码 pane 焦点
 - Visual `<M-->`：旧选区上下文追加入口，会聚焦 Chat input
 - Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xm` / `<leader>Xt`：选择 session、新建 session、选择 model、选择 variant；session picker 内 `r` 重命名、`d` 确认删除
