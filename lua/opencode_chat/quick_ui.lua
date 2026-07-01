@@ -24,6 +24,10 @@ local function valid_buf(buf)
   return buf and vim.api.nvim_buf_is_valid(buf)
 end
 
+local function is_quick_win(win)
+  return win == state.message_win or win == state.input_win or win == state.status_win
+end
+
 local function set_buf_options(buf, filetype, name)
   if name and vim.api.nvim_buf_get_name(buf) == "" then
     pcall(vim.api.nvim_buf_set_name, buf, name)
@@ -95,11 +99,17 @@ local function ensure_buffers()
     vim.keymap.set({ "n", "i" }, "<Tab>", function()
       require("opencode_chat.quick_ui").focus_messages()
     end, { buffer = state.input_buf, silent = true, desc = "Focus opencode quick messages" })
+    vim.keymap.set("n", "q", function()
+      require("opencode_chat.quick").close()
+    end, { buffer = state.input_buf, silent = true, desc = "Close opencode quick ask" })
   end
   if not valid_buf(state.status_buf) then
     state.status_buf = vim.api.nvim_create_buf(false, true)
     set_buf_options(state.status_buf, "opencode-status", "opencode-chat://quick-status")
     vim.bo[state.status_buf].modifiable = false
+    vim.keymap.set("n", "q", function()
+      require("opencode_chat.quick").close()
+    end, { buffer = state.status_buf, silent = true, desc = "Close opencode quick ask" })
   end
 end
 
@@ -138,6 +148,10 @@ end
 
 function M.state()
   return state
+end
+
+function M.is_quick_window(win)
+  return is_quick_win(win)
 end
 
 function M.render_status()

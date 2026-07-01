@@ -552,7 +552,13 @@ assert_eq(#vim.fn.readfile(session_file), quick_session_count, "quick multi-turn
 lines = vim.fn.readfile(prompt_file)
 payload = vim.json.decode(lines[#lines])
 assert_true(payload.parts[1].text:match("@src/example.lua") ~= nil, "quick prompt should include quick-only context")
-opencode.quick_close()
+local quick_panes = vim.deepcopy({
+  message_win = quick_ui.state().message_win,
+  input_win = quick_ui.state().input_win,
+  status_win = quick_ui.state().status_win,
+})
+vim.api.nvim_set_current_win(quick_panes.input_win)
+vim.cmd("quit")
 assert_true(wait_for(function()
   if quick.state().session ~= nil then
     return false
@@ -562,7 +568,8 @@ assert_true(wait_for(function()
   end
   local delete_lines = table.concat(vim.fn.readfile(tmp .. "/.opencode-chat-delete.jsonl"), "\n")
   return delete_lines:find(quick_session_id, 1, true) ~= nil
-end, 3000), "quick close should delete the temporary backend session")
+end, 3000), "quitting one quick pane should delete the temporary backend session")
+assert_true(not vim.api.nvim_win_is_valid(quick_panes.message_win) and not vim.api.nvim_win_is_valid(quick_panes.input_win) and not vim.api.nvim_win_is_valid(quick_panes.status_win), "quitting one quick pane should close all quick panes")
 assert_true(not vim.api.nvim_buf_is_valid(quick_ui.state().message_buf or -1), "quick close should delete quick buffers")
 opencode.clear_context()
 

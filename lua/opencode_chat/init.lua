@@ -107,6 +107,7 @@ local function setup_autoclose()
     group = group,
     callback = function()
       pcall(ui.close_current_panes_if_chat_window)
+      pcall(quick.close_if_current_window)
     end,
   })
 end

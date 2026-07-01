@@ -268,6 +268,10 @@ function M.cancel()
 end
 
 function M.close()
+  if request.closing then
+    return
+  end
+  request.closing = true
   request.id = request.id + 1
   local was_busy = request.busy
   request.busy = false
@@ -275,8 +279,18 @@ function M.close()
   stop_spinner("Idle")
   cleanup_session({ abort = was_busy }, function()
     clear_request_session()
+    request.closing = false
   end)
   ui.close()
+  request.closing = false
+end
+
+function M.close_if_current_window()
+  if ui.is_quick_window(vim.api.nvim_get_current_win()) then
+    M.close()
+    return true
+  end
+  return false
 end
 
 function M.append_file()

@@ -20,7 +20,7 @@
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
 - `:OpencodeSessions` 选择当前 project 的 session，picker 内按 `r` 重命名、按 `d` 并确认后删除；`:OpencodeNewSession` 新建 session 且不重启 server。
 - `:OpencodeModels` 选择白名单模型，`:OpencodeVariants` 按当前 provider 选择 variant。
-- `:OpencodeQuick [prompt]` 打开临时答疑浮窗，复用当前模型配置但使用独立临时 session；关闭或取消后删除临时 session。
+- `:OpencodeQuick [prompt]` 打开临时答疑浮窗，复用当前模型配置但使用独立临时 session；`:q`、Normal `q` 或 `:OpencodeQuickClose` 关闭后会删除临时 session。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
 ## 依赖
