@@ -319,6 +319,20 @@ vim.api.nvim_set_current_tabpage(mirror_tab2)
 vim.cmd("tabclose")
 vim.api.nvim_set_current_tabpage(mirror_tab1)
 opencode.toggle()
+local grouped_panes = vim.deepcopy({
+  message_win = ui.state().message_win,
+  input_win = ui.state().input_win,
+  status_win = ui.state().status_win,
+})
+vim.api.nvim_set_current_win(grouped_panes.message_win)
+vim.cmd("quit")
+assert_true(wait_for(function()
+  return not vim.api.nvim_win_is_valid(grouped_panes.message_win)
+    and not vim.api.nvim_win_is_valid(grouped_panes.input_win)
+    and not vim.api.nvim_win_is_valid(grouped_panes.status_win)
+    and not tab_has_chat(mirror_tab1)
+end, 1000), "closing one chat pane should close the sibling panes in the same tab")
+opencode.toggle()
 ui.set_input("")
 
 local original_tab = vim.api.nvim_get_current_tabpage()

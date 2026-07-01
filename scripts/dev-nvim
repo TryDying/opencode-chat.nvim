@@ -14,6 +14,6 @@ exec nvim \
   -c "lua assert(vim.env.VIM_PROFILE == 'basic', 'VIM_PROFILE must be basic')" \
   -c "lua vim.g.loaded_opencode_chat = nil" \
   -c "source ${REPO_ROOT}/plugin/opencode_chat.lua" \
-  -c "lua require('opencode_chat').setup({ keymaps = { toggle = '<M-->', append_context = '<leader>Xe', append_selection = '<M-->', sessions = '<leader>Xl', new_session = '<leader>Xn', models = '<leader>Xm', variants = '<leader>Xt' } })" \
-  -c "lua vim.notify('opencode-chat.nvim loaded: <M--> toggle, <leader>Xe/Xl/Xn/Xm/Xt, input <C-s>; session picker r/d')" \
+  -c "lua require('opencode_chat').setup({ keymaps = { toggle = '<M-->', append_context = '<leader>Xe', append_selection = '<M-->', sessions = '<leader>Xl', new_session = '<leader>Xn', models = '<leader>Xm', variants = '<leader>Xt', quick = '<leader>Xq', quick_context = '<leader>XQ' } })" \
+  -c "lua vim.notify('opencode-chat.nvim loaded: <M--> toggle, <leader>Xe/Xl/Xn/Xm/Xt/Xq/XQ, input <C-s>; session picker r/d')" \
   "$@"

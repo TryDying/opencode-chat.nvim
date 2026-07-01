@@ -86,8 +86,11 @@ local function setup_autoclose()
   local group = vim.api.nvim_create_augroup("opencode_chat_autoclose", { clear = true })
   vim.api.nvim_create_autocmd({ "WinClosed", "TabEnter" }, {
     group = group,
-    callback = function()
+    callback = function(args)
       vim.schedule(function()
+        if args and tonumber(args.match) then
+          pcall(ui.close_related_panes, args.match)
+        end
         pcall(ui.close_if_only_chat_windows)
       end)
     end,
@@ -98,6 +101,12 @@ local function setup_autoclose()
       vim.schedule(function()
         pcall(ui.show_current_tab_if_visible)
       end)
+    end,
+  })
+  vim.api.nvim_create_autocmd("QuitPre", {
+    group = group,
+    callback = function()
+      pcall(ui.close_current_panes_if_chat_window)
     end,
   })
 end

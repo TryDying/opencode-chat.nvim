@@ -11,6 +11,7 @@
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
 - Chat UI 底部固定 status bar，显示 Idle/Thinking/Streaming/Error 等状态和当前 model/variant。
 - Chat UI 是 tab mirror：只要 Chat 当前可见，新建/切入 tab 会自动显示同一份 Chat；所有 tab 共享 messages、input 草稿、context、session 和状态。
+- Chat UI 的 message/input/status 三个窗口作为一组关闭；对其中任意一个执行 `:q` 会同步关闭另外两个窗口。
 - 当前 tab 只剩 opencode-chat 的 message/input/status 窗口时，会自动清理 Chat：有其它 tab 时关闭当前 tab，最后一个 tab 时允许 Neovim 正常退出。
 - `:OpencodeAppendFile` 将当前文件引用和内容加入下一次提问上下文。
 - `:OpencodeAppendSelection` 将 Visual 选区引用和内容加入下一次提问上下文。
@@ -19,6 +20,7 @@
 - `:OpencodeEdit [instruction]` 使用配置的 opencode agent 执行文件修改，并渲染 assistant 总结。
 - `:OpencodeSessions` 选择当前 project 的 session，picker 内按 `r` 重命名、按 `d` 并确认后删除；`:OpencodeNewSession` 新建 session 且不重启 server。
 - `:OpencodeModels` 选择白名单模型，`:OpencodeVariants` 按当前 provider 选择 variant。
+- `:OpencodeQuick [prompt]` 打开临时答疑浮窗，复用当前模型配置但使用独立临时 session；关闭或取消后删除临时 session。
 - `:OpencodeStop` 停止 opencode job 并关闭插件窗口。
 
 ## 依赖
@@ -56,6 +58,8 @@ require("opencode_chat").setup({
     new_session = "<leader>Xn",
     models = "<leader>Xm",
     variants = "<leader>Xt",
+    quick = "<leader>Xq",
+    quick_context = "<leader>XQ",
   },
   ui = {
     width = 0.4,
@@ -76,6 +80,7 @@ require("opencode_chat").setup({
 - Normal/Visual `<leader>Xe`：追加当前文件或 Visual 选区上下文，保持代码 pane 焦点
 - Visual `<M-->`：旧选区上下文追加入口，会聚焦 Chat input
 - Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xm` / `<leader>Xt`：选择 session、新建 session、选择 model、选择 variant；session picker 内 `r` 重命名、`d` 确认删除
+- Normal/Insert `<leader>Xq`：打开 Quick Ask 临时答疑；Normal/Visual `<leader>XQ`：向 Quick Ask 追加独立上下文
 
 `:OpencodeToggle` 在当前 tab 面板隐藏时打开 Chat 镜像；当前 tab 面板已打开但当前焦点不在 Chat 内时，会重新聚焦到 Chat 输入区；焦点已在 Chat 内时会隐藏所有 tab 的 Chat UI。只要 Chat 处于可见状态，新建或切入 tab 会自动显示同一份 Chat 镜像。
 
@@ -96,4 +101,4 @@ nvim --headless -l tests/run.lua
 ```
 
 该命令会创建并打开 `/tmp/opencode-chat.nvim-sandbox/src/example.lua`，不会使用仓库内受 Git 管理的文件做测试目标。
-开发态脚本会显式注入推荐测试快捷键：`<M-->`、`<leader>Xe`、`<leader>Xl`、`<leader>Xn`、`<leader>Xm`、`<leader>Xt`；插件默认配置仍不注册全局快捷键。
+开发态脚本会显式注入推荐测试快捷键：`<M-->`、`<leader>Xe`、`<leader>Xl`、`<leader>Xn`、`<leader>Xm`、`<leader>Xt`、`<leader>Xq`、`<leader>XQ`；插件默认配置仍不注册全局快捷键。

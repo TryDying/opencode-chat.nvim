@@ -405,6 +405,53 @@ function M.close_if_only_chat_windows()
   return true
 end
 
+function M.close_related_panes(closed_win)
+  closed_win = tonumber(closed_win)
+  if not closed_win then
+    return false
+  end
+
+  for key, panes in pairs(state.tabs) do
+    if closed_win == panes.message_win or closed_win == panes.input_win or closed_win == panes.status_win then
+      state.tabs[key] = nil
+      pcall(function()
+        require("opencode_chat.picker").close()
+      end)
+      for _, win in ipairs({ panes.message_win, panes.status_win, panes.input_win }) do
+        if win ~= closed_win and valid_win(win) then
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end
+      state.visible = any_panes_visible()
+      sync_current_panes()
+      return true
+    end
+  end
+
+  return false
+end
+
+function M.close_current_panes_if_chat_window()
+  local current = vim.api.nvim_get_current_win()
+  for key, panes in pairs(state.tabs) do
+    if current == panes.message_win or current == panes.input_win or current == panes.status_win then
+      state.tabs[key] = nil
+      pcall(function()
+        require("opencode_chat.picker").close()
+      end)
+      for _, win in ipairs({ panes.message_win, panes.status_win, panes.input_win }) do
+        if win ~= current and valid_win(win) then
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end
+      state.visible = any_panes_visible()
+      sync_current_panes()
+      return true
+    end
+  end
+  return false
+end
+
 function M.is_chat_window(win)
   return is_chat_win(win)
 end
