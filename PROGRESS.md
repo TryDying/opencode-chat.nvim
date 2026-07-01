@@ -275,3 +275,10 @@
 - 方案：`root.find()` 跳过 URI/插件 buffer，优先使用当前 tab/已打开 buffer 中的真实文件路径，并缓存最近真实文件 root。
 - 预防：测试必须覆盖焦点位于 Chat input 时仍能从可见代码窗口推断项目 root，避免 session/root 逻辑重新依赖当前 buffer。
 - commitID：c4147d8
+
+## 2026-07-01：Session picker 应隐藏内部 subagent 会话
+
+- 问题：opencode API 会返回同 project/root 下的 subagent/internal sessions，但 `opencode session list` 默认不展示；插件只按 project/root 过滤会把大量 runner/code-explorer 子会话暴露给用户。
+- 方案：session 收集阶段增加用户可见性过滤，隐藏带 parent session、kind/source 标记为 subagent，或标题形如 `(@runner subagent)` 的内部会话。
+- 预防：fake server 必须返回同 project 的 subagent session，测试断言 picker 不显示其 id/title，避免再次只按 project/root 过滤。
+- commitID：4738ad1
