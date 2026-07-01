@@ -558,7 +558,8 @@ local quick_panes = vim.deepcopy({
   status_win = quick_ui.state().status_win,
 })
 vim.api.nvim_set_current_win(quick_panes.input_win)
-vim.cmd("quit")
+vim.cmd("startinsert")
+vim.api.nvim_feedkeys("q", "xt", false)
 assert_true(wait_for(function()
   if quick.state().session ~= nil then
     return false
@@ -568,8 +569,8 @@ assert_true(wait_for(function()
   end
   local delete_lines = table.concat(vim.fn.readfile(tmp .. "/.opencode-chat-delete.jsonl"), "\n")
   return delete_lines:find(quick_session_id, 1, true) ~= nil
-end, 3000), "quitting one quick pane should delete the temporary backend session")
-assert_true(not vim.api.nvim_win_is_valid(quick_panes.message_win) and not vim.api.nvim_win_is_valid(quick_panes.input_win) and not vim.api.nvim_win_is_valid(quick_panes.status_win), "quitting one quick pane should close all quick panes")
+end, 3000), "pressing q in empty quick input should delete the temporary backend session")
+assert_true(not vim.api.nvim_win_is_valid(quick_panes.message_win) and not vim.api.nvim_win_is_valid(quick_panes.input_win) and not vim.api.nvim_win_is_valid(quick_panes.status_win), "pressing q in quick input should close all quick panes")
 assert_true(not vim.api.nvim_buf_is_valid(quick_ui.state().message_buf or -1), "quick close should delete quick buffers")
 opencode.clear_context()
 

@@ -28,6 +28,10 @@ local function is_quick_win(win)
   return win == state.message_win or win == state.input_win or win == state.status_win
 end
 
+local function close_quick()
+  require("opencode_chat.quick").close()
+end
+
 local function set_buf_options(buf, filetype, name)
   if name and vim.api.nvim_buf_get_name(buf) == "" then
     pcall(vim.api.nvim_buf_set_name, buf, name)
@@ -71,9 +75,7 @@ local function ensure_buffers()
     state.message_buf = vim.api.nvim_create_buf(false, true)
     set_buf_options(state.message_buf, "markdown", "opencode-chat://quick-messages")
     vim.bo[state.message_buf].modifiable = false
-    vim.keymap.set("n", "q", function()
-      require("opencode_chat.quick").close()
-    end, { buffer = state.message_buf, silent = true, desc = "Close opencode quick ask" })
+    vim.keymap.set("n", "q", close_quick, { buffer = state.message_buf, silent = true, nowait = true, desc = "Close opencode quick ask" })
     vim.keymap.set("n", "<Tab>", function()
       require("opencode_chat.quick_ui").focus_input()
     end, { buffer = state.message_buf, silent = true, desc = "Focus opencode quick input" })
@@ -99,17 +101,20 @@ local function ensure_buffers()
     vim.keymap.set({ "n", "i" }, "<Tab>", function()
       require("opencode_chat.quick_ui").focus_messages()
     end, { buffer = state.input_buf, silent = true, desc = "Focus opencode quick messages" })
-    vim.keymap.set("n", "q", function()
-      require("opencode_chat.quick").close()
-    end, { buffer = state.input_buf, silent = true, desc = "Close opencode quick ask" })
+    vim.keymap.set("n", "q", close_quick, { buffer = state.input_buf, silent = true, nowait = true, desc = "Close opencode quick ask" })
+    vim.keymap.set("i", "q", function()
+      if M.input_text() == "" then
+        vim.schedule(close_quick)
+        return ""
+      end
+      return "q"
+    end, { buffer = state.input_buf, expr = true, silent = true, desc = "Close empty opencode quick ask" })
   end
   if not valid_buf(state.status_buf) then
     state.status_buf = vim.api.nvim_create_buf(false, true)
     set_buf_options(state.status_buf, "opencode-status", "opencode-chat://quick-status")
     vim.bo[state.status_buf].modifiable = false
-    vim.keymap.set("n", "q", function()
-      require("opencode_chat.quick").close()
-    end, { buffer = state.status_buf, silent = true, desc = "Close opencode quick ask" })
+    vim.keymap.set("n", "q", close_quick, { buffer = state.status_buf, silent = true, nowait = true, desc = "Close opencode quick ask" })
   end
 end
 
