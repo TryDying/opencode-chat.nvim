@@ -296,3 +296,10 @@
 - 方案：在 `QuitPre` 识别当前 Chat pane，并同步关闭同 tab 的 sibling panes；保留 WinClosed/TabEnter 自动清理作为兜底。
 - 预防：测试必须覆盖对单个 Chat pane 执行 `:q` 后三窗格全部关闭，避免后续窗口生命周期改动再次拆散 pane 组。
 - commitID：741dc2d
+
+## 2026-07-01：Quick Ask floating panes 也需要同组关闭
+
+- 问题：Quick Ask 也由 message/input/status 三个浮窗组成，用户对任一 pane 执行 `:q` 后其它浮窗残留，且临时 session 清理入口不明显。
+- 方案：Quick Ask 在 `QuitPre` 识别当前 Quick pane 并调用完整 close 流程，同时为 input/status 补充 Normal `q` 关闭映射。
+- 预防：测试必须覆盖对单个 Quick pane 执行 `:q` 后三浮窗全部关闭，并确认临时 session 被删除。
+- commitID：831f04b
