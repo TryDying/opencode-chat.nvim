@@ -109,13 +109,6 @@ local function ensure_buffers()
       require("opencode_chat.quick_ui").focus_messages()
     end, { buffer = state.input_buf, silent = true, desc = "Focus opencode quick messages" })
     vim.keymap.set("n", "q", close_quick, { buffer = state.input_buf, silent = true, nowait = true, desc = "Close opencode quick ask" })
-    vim.keymap.set("i", "q", function()
-      if M.input_text() == "" then
-        vim.schedule(close_quick)
-        return ""
-      end
-      return "q"
-    end, { buffer = state.input_buf, expr = true, silent = true, desc = "Close empty opencode quick ask" })
   end
   if not valid_buf(state.status_buf) then
     state.status_buf = vim.api.nvim_create_buf(false, true)
