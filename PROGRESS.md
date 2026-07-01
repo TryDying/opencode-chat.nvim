@@ -268,3 +268,10 @@
 - 方案：配置的 toggle keymap 同时注册 Normal/Insert；Insert 回调先 `stopinsert`，再调度执行原 reveal/focus/hide toggle 逻辑。
 - 预防：测试必须断言推荐 toggle 在 Insert 模式也有映射，后续 keymap 重构不能只保留 Normal 入口。
 - commitID：9b0c790
+
+## 2026-07-01：Root 识别不能把 Chat buffer 当项目路径
+
+- 问题：焦点在 opencode-chat pane 时打开 session 列表，root 推断可能落到 `opencode-chat://` buffer 或启动 cwd，导致按错误 project/root 过滤后 sessions 为空。
+- 方案：`root.find()` 跳过 URI/插件 buffer，优先使用当前 tab/已打开 buffer 中的真实文件路径，并缓存最近真实文件 root。
+- 预防：测试必须覆盖焦点位于 Chat input 时仍能从可见代码窗口推断项目 root，避免 session/root 逻辑重新依赖当前 buffer。
+- commitID：c4147d8
