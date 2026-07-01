@@ -49,6 +49,54 @@ local function session_directory(session)
     or (type(session.project) == "table" and (session.project.directory or session.project.path or session.project.worktree or session.project.cwd))
 end
 
+local function session_parent_id(session)
+  if type(session) ~= "table" then
+    return nil
+  end
+  return session.parentID
+    or session.parentId
+    or session.parent_id
+    or session.parentSessionID
+    or session.parentSessionId
+    or session.parent_session_id
+    or (type(session.parent) == "table" and (session.parent.id or session.parent.sessionID or session.parent.sessionId or session.parent.session_id))
+end
+
+local function session_kind(session)
+  if type(session) ~= "table" then
+    return nil
+  end
+  return session.kind
+    or session.type
+    or session.category
+    or session.source
+    or (type(session.metadata) == "table" and (session.metadata.kind or session.metadata.type or session.metadata.category or session.metadata.source))
+end
+
+local function session_title(session)
+  if type(session) ~= "table" then
+    return ""
+  end
+  return tostring(session.title or session.name or "")
+end
+
+local function session_is_user_visible(session)
+  if type(session) ~= "table" then
+    return false
+  end
+  if session_parent_id(session) then
+    return false
+  end
+  local kind = session_kind(session)
+  if type(kind) == "string" and kind:lower():match("subagent") then
+    return false
+  end
+  if session_title(session):match("%(@[^%)]- subagent%)") then
+    return false
+  end
+  return true
+end
+
 function M.state()
   return state
 end
@@ -111,7 +159,7 @@ local function collect_sessions(raw, filter_project)
     if type(item) == "table" and id then
       item.id = id
     end
-    if type(item) == "table" and item.id and (not filter_project or session_matches_project(item)) then
+    if type(item) == "table" and item.id and session_is_user_visible(item) and (not filter_project or session_matches_project(item)) then
       table.insert(sessions, item)
       remember_session(item.id, item)
     end

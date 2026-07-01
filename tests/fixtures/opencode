@@ -52,11 +52,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "projectID": "test-project",
             "directory": "/tmp/other-workspace",
         }
+        subagent = {
+            "id": "subagent-session",
+            "title": "Build APK (@runner subagent)",
+            "projectID": "test-project",
+            "directory": os.getcwd(),
+            "parentSessionID": "test-session-1",
+        }
         if self.path == "/api/session":
-            self._json({"data": {"items": SESSIONS + [foreign]}})
+            self._json({"data": {"items": SESSIONS + [foreign, subagent]}})
             return
         if self.path == "/project/test-project/session":
-            self._json({"data": {"sessions": SESSIONS + [foreign]}})
+            self._json({"data": {"sessions": SESSIONS + [foreign, subagent]}})
             return
         match = re.match(r"^/session/([^/]+)/message$", self.path)
         if match:

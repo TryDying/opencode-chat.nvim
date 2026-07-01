@@ -445,6 +445,8 @@ local session_picker_lines = table.concat(vim.api.nvim_buf_get_lines(picker.stat
 assert_true(session_picker_lines:match("test%-session%-1") ~= nil, "session picker should include first session")
 assert_true(session_picker_lines:match("Renamed test session") ~= nil, "session picker should include renamed latest session")
 assert_true(session_picker_lines:match("foreign%-session") == nil, "session picker should filter out sessions from other projects")
+assert_true(session_picker_lines:match("subagent%-session") == nil, "session picker should hide subagent sessions")
+assert_true(session_picker_lines:match("@runner subagent") == nil, "session picker should hide subagent titles")
 
 local function picker_line_matching(pattern)
   for line, text in ipairs(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false)) do
