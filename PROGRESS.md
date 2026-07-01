@@ -303,3 +303,10 @@
 - 方案：Quick Ask 在 `QuitPre` 识别当前 Quick pane 并调用完整 close 流程，同时为 input/status 补充 Normal `q` 关闭映射。
 - 预防：测试必须覆盖对单个 Quick pane 执行 `:q` 后三浮窗全部关闭，并确认临时 session 被删除。
 - commitID：831f04b
+
+## 2026-07-01：Quick context 追加后也必须退出 Visual 模式
+
+- 问题：Quick Ask 的 Visual context 追加复用了独立 UI 路径，没有像主 Chat 一样显式退出 Visual 模式，导致追加后仍停留在选区状态。
+- 方案：`quick_ui.show()` 支持 `leave_visual`，Quick Visual context 追加在读取选区后传递该标记，渲染浮窗前退出 Visual/Select 模式。
+- 预防：测试必须覆盖 `quick_append_context` 在 active Visual selection 下追加选区并退出 Visual 模式，避免 Quick 与主 Chat 行为分叉。
+- commitID：96978ee
