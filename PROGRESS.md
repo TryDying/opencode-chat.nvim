@@ -289,3 +289,10 @@
 - 方案：新增 Quick Ask 浮动窗口，复用当前 agent/model/variant 和 opencode server，但使用独立临时 session 与独立 context；关闭或取消时删除临时 session。
 - 预防：测试必须覆盖 Quick Ask 不替换主 session、不消费主 context、多轮复用临时 session，并在关闭/取消后调用 DELETE 清理。
 - commitID：7765341
+
+## 2026-07-01：Chat panes 应作为一个窗口组关闭
+
+- 问题：用户对 message/input/status 任一 Chat pane 执行 `:q` 后，其它 pane 会孤立残留，需要重复关闭再重新打开。
+- 方案：在 `QuitPre` 识别当前 Chat pane，并同步关闭同 tab 的 sibling panes；保留 WinClosed/TabEnter 自动清理作为兜底。
+- 预防：测试必须覆盖对单个 Chat pane 执行 `:q` 后三窗格全部关闭，避免后续窗口生命周期改动再次拆散 pane 组。
+- commitID：741dc2d
