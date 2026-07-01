@@ -261,3 +261,10 @@
 - 方案：配置归一化支持 array-style provider 条目 `{ id = "opencode-go", ... }`，同时文档说明也可使用 `["opencode-go"] = { ... }`。
 - 预防：测试必须覆盖含连字符 provider ID 的模型选择，避免后续重构把 provider ID 限制回 Lua bare key。
 - commitID：1dad14d
+
+## 2026-07-01：Toggle 快捷键应覆盖 Insert 模式
+
+- 问题：用户在 Insert 模式写代码时触发 `<M-->`，若只注册 Normal map，需要先手动 `<Esc>`，否则快捷键容易失效。
+- 方案：配置的 toggle keymap 同时注册 Normal/Insert；Insert 回调先 `stopinsert`，再调度执行原 reveal/focus/hide toggle 逻辑。
+- 预防：测试必须断言推荐 toggle 在 Insert 模式也有映射，后续 keymap 重构不能只保留 Normal 入口。
+- commitID：9b0c790
