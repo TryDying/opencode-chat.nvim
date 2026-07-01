@@ -158,6 +158,7 @@ opencode.append_selection()
 assert_eq(ui.state().context[#ui.state().context].label, "@src/example.lua#L1-L3", "visual append should queue the active selection")
 assert_eq(vim.api.nvim_get_current_win(), ui.state().input_win, "visual append should focus opencode input")
 assert_true(vim.api.nvim_get_mode().mode ~= "v" and vim.api.nvim_get_mode().mode ~= "V", "visual append should leave visual mode")
+assert_eq(root.find(), vim.fs.normalize(tmp), "root.find should ignore chat buffers and use visible project files")
 ui.consume_context()
 vim.cmd("normal! \027")
 
