@@ -280,78 +280,168 @@ local function text_from_event(event)
   return "", false
 end
 
-function M.send(text, startpath, cb, events)
+local function send_to_session(current, text, cb, events, set_active)
   local cfg = config.get()
+  if vim.in_fast_event() then
+    vim.schedule(function()
+      send_to_session(current, text, cb, events, set_active)
+    end)
+    return nil
+  end
+  local model = config.current_model()
+  local streamed_text = ""
+  local wait_handle
+  local stream = client.subscribe_events({ host = cfg.host, port = current.port }, function(event)
+    local session_id = event_session_id(event)
+    if session_id and session_id ~= current.session_id then
+      return
+    end
+    local text_delta, append = text_from_event(event)
+    if text_delta ~= "" and events and events.on_delta then
+      if append then
+        streamed_text = streamed_text .. text_delta
+      else
+        streamed_text = text_delta
+      end
+      events.on_delta(streamed_text)
+    end
+  end)
+  local send_handle
+  local function cancel_stream()
+    if stream then
+      stream.cancel()
+      stream = nil
+    end
+  end
+  local handle = {
+    cancel = function()
+      cancel_stream()
+      if send_handle and send_handle.kill then
+        pcall(function()
+          send_handle:kill(15)
+        end)
+      elseif send_handle and send_handle.cancel then
+        send_handle.cancel()
+      end
+      if wait_handle and wait_handle.cancel then
+        wait_handle.cancel()
+      end
+    end
+  }
+  send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
+    cancel_stream()
+    if not sent then
+      if set_active then
+        set_active(nil)
+      end
+      cb(false, nil, client.format_error(result, "prompt failed"))
+      return
+    end
+
+    if reply and reply ~= "" then
+      if set_active then
+        set_active(nil)
+      end
+      cb(true, reply, data)
+      return
+    end
+
+    wait_handle = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
+      if set_active then
+        set_active(nil)
+      end
+      if found then
+        cb(true, assistant_text, history)
+        return
+      end
+      cb(false, nil, client.format_error(history_result, "assistant response not found"))
+    end)
+  end)
+  if set_active then
+    set_active(handle)
+  end
+  return handle
+end
+
+function M.send(text, startpath, cb, events)
   M.ensure_started(startpath, function(ok, current, err)
     if not ok then
       cb(false, nil, err)
       return
     end
-    if vim.in_fast_event() then
-      vim.schedule(function()
-        M.send(text, startpath, cb, events)
-      end)
+    send_to_session(current, text, cb, events, function(handle)
+      active = handle
+    end)
+  end)
+end
+
+function M.create_ephemeral_session(startpath, cb)
+  local cfg = config.get()
+  M.ensure_server(startpath, function(ok, current, err)
+    if not ok then
+      cb(false, nil, err)
       return
     end
-    local model = config.current_model()
-    local streamed_text = ""
-    local stream = client.subscribe_events({ host = cfg.host, port = current.port }, function(event)
-      local session_id = event_session_id(event)
-      if session_id and session_id ~= current.session_id then
+    client.create_session(current.root, { host = cfg.host, port = current.port, agent = cfg.agent, model = config.current_model() }, function(created, session_id, _data, create_result, api_style)
+      if not created then
+        cb(false, nil, client.format_error(create_result, "failed to create quick session"))
         return
       end
-      local text_delta, append = text_from_event(event)
-      if text_delta ~= "" and events and events.on_delta then
-        if append then
-          streamed_text = streamed_text .. text_delta
-        else
-          streamed_text = text_delta
-        end
-        events.on_delta(streamed_text)
-      end
+      cb(true, {
+        root = current.root,
+        port = current.port,
+        session_id = session_id,
+        project_id = current.project_id,
+        api_style = api_style,
+      })
     end)
-    local send_handle
-    local function cancel_stream()
-      if stream then
-        stream.cancel()
-        stream = nil
-      end
-    end
-    send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
-      cancel_stream()
-      active = nil
-      if not sent then
-        cb(false, nil, client.format_error(result, "prompt failed"))
-        return
-      end
-
-      if reply and reply ~= "" then
-        cb(true, reply, data)
-        return
-      end
-
-      active = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
-        active = nil
-        if found then
-          cb(true, assistant_text, history)
-          return
-        end
-        cb(false, nil, client.format_error(history_result, "assistant response not found"))
-      end)
-    end)
-    active = {
-      cancel = function()
-        cancel_stream()
-        if send_handle and send_handle.kill then
-          pcall(function()
-            send_handle:kill(15)
-          end)
-        elseif send_handle and send_handle.cancel then
-          send_handle.cancel()
-        end
-      end
-    }
   end)
+end
+
+function M.send_ephemeral(session, text, cb, events)
+  if not session or not session.session_id then
+    cb(false, nil, "quick session is missing")
+    return nil
+  end
+  return send_to_session(session, text, cb, events)
+end
+
+function M.abort_ephemeral(session, cb)
+  if not session or not session.session_id then
+    if cb then
+      cb(false, "quick session is missing")
+    end
+    return
+  end
+  return client.abort_session(session.session_id, { host = config.get().host, port = session.port }, function(ok, _data, result)
+    if cb then
+      cb(ok, ok and "cancelled" or client.format_error(result, "quick cancel failed"))
+    end
+  end)
+end
+
+function M.delete_ephemeral(session, cb)
+  if not session or not session.session_id then
+    if cb then
+      cb(true)
+    end
+    return
+  end
+  return client.delete_session(session.session_id, { host = config.get().host, port = session.port, directory = session.root }, function(ok, data, result)
+    if cb then
+      cb(ok, data, ok and nil or client.format_error(result, "failed to delete quick session"))
+    end
+  end)
+end
+
+function M.delete_ephemeral_sync(session)
+  if not session or not session.session_id then
+    return true
+  end
+  local target = client.delete_session_url(session.session_id, { host = config.get().host, port = session.port, directory = session.root })
+  local result = vim.fn.system({ "curl", "-sS", "-X", "DELETE", target, "-w", "\n%{http_code}" })
+  local status = tostring(result or ""):match("(%d%d%d)%s*$")
+  return vim.v.shell_error == 0 and status and tonumber(status) >= 200 and tonumber(status) < 300, result, target
 end
 
 function M.cancel(cb)

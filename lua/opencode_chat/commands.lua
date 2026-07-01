@@ -29,6 +29,30 @@ function M.setup(api)
     api.ask(opts.args)
   end, { nargs = "*", force = true })
 
+  vim.api.nvim_create_user_command("OpencodeQuick", function(opts)
+    api.quick(opts.args)
+  end, { nargs = "*", force = true })
+
+  vim.api.nvim_create_user_command("OpencodeQuickClose", function()
+    api.quick_close()
+  end, { force = true })
+
+  vim.api.nvim_create_user_command("OpencodeQuickCancel", function()
+    api.quick_cancel()
+  end, { force = true })
+
+  vim.api.nvim_create_user_command("OpencodeQuickAppendContext", function()
+    api.quick_append_context()
+  end, { range = true, force = true })
+
+  vim.api.nvim_create_user_command("OpencodeQuickContextRemove", function(opts)
+    api.quick_remove_context(opts.args)
+  end, { nargs = 1, force = true })
+
+  vim.api.nvim_create_user_command("OpencodeQuickContextClear", function()
+    api.quick_clear_context()
+  end, { force = true })
+
   vim.api.nvim_create_user_command("OpencodeEdit", function(opts)
     api.edit(opts.args)
   end, { nargs = "*", force = true })

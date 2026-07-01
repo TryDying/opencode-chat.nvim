@@ -36,6 +36,8 @@ local opencode = require("opencode_chat")
 local picker = require("opencode_chat.picker")
 local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
+local quick = require("opencode_chat.quick")
+local quick_ui = require("opencode_chat.quick_ui")
 
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp .. "/.git", "p")
@@ -82,6 +84,8 @@ local setup_config = {
     new_session = "<leader>Xn",
     models = "<leader>Xm",
     variants = "<leader>Xt",
+    quick = "<leader>Xq",
+    quick_context = "<leader>XQ",
   },
 }
 opencode.setup(setup_config)
@@ -91,6 +95,10 @@ assert_true(vim.fn.exists(":OpencodeAppendContext") == 2, "append context comman
 assert_true(vim.fn.exists(":OpencodeContextRemove") == 2, "context remove command should be registered")
 assert_true(vim.fn.exists(":OpencodeContextClear") == 2, "context clear command should be registered")
 assert_true(vim.fn.exists(":OpencodeAsk") == 2, "ask command should be registered")
+assert_true(vim.fn.exists(":OpencodeQuick") == 2, "quick command should be registered")
+assert_true(vim.fn.exists(":OpencodeQuickClose") == 2, "quick close command should be registered")
+assert_true(vim.fn.exists(":OpencodeQuickCancel") == 2, "quick cancel command should be registered")
+assert_true(vim.fn.exists(":OpencodeQuickAppendContext") == 2, "quick context command should be registered")
 assert_true(vim.fn.exists(":OpencodeEdit") == 2, "edit command should be registered")
 assert_true(vim.fn.exists(":OpencodeCancel") == 2, "cancel command should be registered")
 assert_true(vim.fn.exists(":OpencodeSessions") == 2, "sessions command should be registered")
@@ -108,6 +116,10 @@ assert_true(vim.fn.maparg("<leader>Xn", "n") ~= "", "new session keymap should b
 assert_true(vim.fn.maparg("<leader>Xr", "n") == "", "rename session keymap should not be mapped by recommended test config")
 assert_true(vim.fn.maparg("<leader>Xm", "n") ~= "", "model picker keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xt", "n") ~= "", "variant picker keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xq", "n") ~= "", "quick ask keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xq", "i") ~= "", "insert quick ask keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>XQ", "n") ~= "", "normal quick context keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>XQ", "v") ~= "", "visual quick context keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xv", "n") == "", "old variant keymap should not be mapped")
 assert_true(not pcall(function()
   config.setup({ variant = "low" })
@@ -493,6 +505,69 @@ assert_true(wait_for(function()
   local messages = ui.state().messages
   return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("model switch") ~= nil
 end, 3000), "select_session should switch back and render history")
+
+local main_session_before_quick = server.state().session_id
+opencode.append_file()
+assert_eq(#ui.state().context, 1, "main context should remain queued before quick ask")
+opencode.quick("quick branch")
+assert_true(wait_for(function()
+  local messages = quick_ui.state().messages
+  return quick.state().busy == false and messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("quick branch") ~= nil
+end, 3000), "quick ask should render assistant reply")
+assert_eq(vim.api.nvim_win_get_config(quick_ui.state().message_win).relative, "editor", "quick ask should use a floating message window")
+assert_eq(server.state().session_id, main_session_before_quick, "quick ask should not replace the main chat session")
+assert_eq(#ui.state().context, 1, "quick ask should not consume main chat context")
+lines = vim.fn.readfile(prompt_file)
+payload = vim.json.decode(lines[#lines])
+sent_text = payload.parts[1].text
+assert_true(sent_text:match("quick branch") ~= nil, "quick prompt should include question")
+assert_true(sent_text:match("@src/example.lua") == nil, "quick prompt should not consume main queued context")
+assert_eq(payload.model.modelID, "deepseek-v4-pro", "quick message should reuse selected model")
+assert_eq(payload.variant, "max", "quick message should reuse selected variant")
+local quick_session_id = quick.state().session.session_id
+local quick_session_count = #vim.fn.readfile(session_file)
+opencode.quick_append_file()
+assert_eq(#quick_ui.state().context, 1, "quick context should be isolated")
+opencode.quick("quick follow")
+assert_true(wait_for(function()
+  local messages = quick_ui.state().messages
+  return quick.state().busy == false and messages[#messages] and messages[#messages].text:match("quick follow") ~= nil
+end, 3000), "quick ask should support multiple turns")
+assert_eq(quick.state().session.session_id, quick_session_id, "quick ask should reuse its temporary session while open")
+assert_eq(#vim.fn.readfile(session_file), quick_session_count, "quick multi-turn should not create another session")
+lines = vim.fn.readfile(prompt_file)
+payload = vim.json.decode(lines[#lines])
+assert_true(payload.parts[1].text:match("@src/example.lua") ~= nil, "quick prompt should include quick-only context")
+opencode.quick_close()
+assert_true(wait_for(function()
+  if quick.state().session ~= nil then
+    return false
+  end
+  if vim.fn.filereadable(tmp .. "/.opencode-chat-delete.jsonl") ~= 1 then
+    return false
+  end
+  local delete_lines = table.concat(vim.fn.readfile(tmp .. "/.opencode-chat-delete.jsonl"), "\n")
+  return delete_lines:find(quick_session_id, 1, true) ~= nil
+end, 3000), "quick close should delete the temporary backend session")
+assert_true(not vim.api.nvim_buf_is_valid(quick_ui.state().message_buf or -1), "quick close should delete quick buffers")
+opencode.clear_context()
+
+opencode.quick("slow response")
+assert_true(wait_for(function()
+  return quick.state().busy == true and quick.state().session ~= nil
+end, 1000), "slow quick ask should enter busy state")
+local cancelled_quick_session = quick.state().session.session_id
+opencode.quick_cancel()
+assert_true(wait_for(function()
+  local messages = quick_ui.state().messages
+  return quick.state().busy == false and messages[#messages] and messages[#messages].role == "Cancelled"
+end, 3000), "quick cancel should abort and render cancellation")
+assert_true(wait_for(function()
+  local abort_lines = vim.fn.filereadable(tmp .. "/.opencode-chat-abort.jsonl") == 1 and table.concat(vim.fn.readfile(tmp .. "/.opencode-chat-abort.jsonl"), "\n") or ""
+  local delete_lines = vim.fn.filereadable(tmp .. "/.opencode-chat-delete.jsonl") == 1 and table.concat(vim.fn.readfile(tmp .. "/.opencode-chat-delete.jsonl"), "\n") or ""
+  return abort_lines:find(cancelled_quick_session, 1, true) ~= nil and delete_lines:find(cancelled_quick_session, 1, true) ~= nil
+end, 3000), "quick cancel should abort and delete the temporary session")
+opencode.quick_close()
 
 opencode.edit("make add subtract instead")
 assert_true(wait_for(function()

@@ -4,6 +4,7 @@ local ui = require("opencode_chat.ui")
 local picker = require("opencode_chat.picker")
 local context = require("opencode_chat.context")
 local commands = require("opencode_chat.commands")
+local quick = require("opencode_chat.quick")
 
 local M = {}
 local request = {
@@ -70,6 +71,8 @@ local function set_configured_keymaps(keymaps)
     rename_session = { mode = "n", rhs = function() require("opencode_chat").rename_session() end, desc = "Rename opencode session" },
     models = { mode = "n", rhs = function() require("opencode_chat").show_models() end, desc = "Select opencode model" },
     variants = { mode = "n", rhs = function() require("opencode_chat").show_variants() end, desc = "Select opencode variant" },
+    quick = { mode = { "n", "i" }, rhs = function() require("opencode_chat").quick_toggle_from_keymap() end, desc = "Open opencode quick ask" },
+    quick_context = { mode = { "n", "v" }, rhs = function() require("opencode_chat").quick_append_context() end, desc = "Append context to opencode quick ask" },
   }
   for name, lhs in pairs(keymaps) do
     local map = maps[name]
@@ -509,11 +512,64 @@ function M.select_variant(variant)
   return true
 end
 
+function M.quick(text)
+  return quick.show(text)
+end
+
+function M.quick_toggle_from_keymap()
+  local mode = vim.api.nvim_get_mode().mode
+  if mode == "i" or mode == "ic" or mode == "ix" then
+    pcall(vim.cmd, "stopinsert")
+    vim.schedule(function()
+      require("opencode_chat").quick()
+    end)
+    return require("opencode_chat.quick_ui").state()
+  end
+  return M.quick()
+end
+
+function M.quick_submit()
+  return quick.submit()
+end
+
+function M.quick_cancel()
+  return quick.cancel()
+end
+
+function M.quick_close()
+  return quick.close()
+end
+
+function M.quick_append_file()
+  return quick.append_file()
+end
+
+function M.quick_append_selection()
+  return quick.append_selection()
+end
+
+function M.quick_append_context()
+  return quick.append_context()
+end
+
+function M.quick_remove_context(index)
+  return quick.remove_context(index)
+end
+
+function M.quick_remove_context_at_cursor()
+  return quick.remove_context_at_cursor()
+end
+
+function M.quick_clear_context()
+  return quick.clear_context()
+end
+
 function M.stop()
   request.busy = false
   request.cancelling = false
   request.id = request.id + 1
   stop_spinner("Idle")
+  quick.close()
   server.stop()
   ui.close()
 end
