@@ -32,6 +32,13 @@ local function close_quick()
   require("opencode_chat.quick").close()
 end
 
+local function leave_visual_mode()
+  local mode = vim.api.nvim_get_mode().mode
+  if mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19" then
+    vim.cmd("normal! \027")
+  end
+end
+
 local function set_buf_options(buf, filetype, name)
   if name and vim.api.nvim_buf_get_name(buf) == "" then
     pcall(vim.api.nvim_buf_set_name, buf, name)
@@ -205,6 +212,9 @@ end
 function M.show(opts)
   opts = opts or {}
   state.visible = true
+  if opts.focus ~= "none" or opts.leave_visual then
+    leave_visual_mode()
+  end
   open_windows()
   M.render()
   if opts.focus == "messages" then
@@ -309,13 +319,13 @@ function M.add_context(item, project_root, opts)
     if existing.label == item.label then
       state.context[index] = item
       state.context_root = project_root or state.context_root
-      M.show({ focus = opts.focus or "input" })
+      M.show({ focus = opts.focus or "input", leave_visual = opts.leave_visual })
       return false
     end
   end
   table.insert(state.context, item)
   state.context_root = project_root or state.context_root
-  M.show({ focus = opts.focus or "input" })
+  M.show({ focus = opts.focus or "input", leave_visual = opts.leave_visual })
   return true
 end
 

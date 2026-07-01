@@ -298,16 +298,17 @@ function M.append_file()
   ui.add_context(item, project_root)
 end
 
-function M.append_selection()
+function M.append_selection(opts)
+  opts = opts or {}
   local item, project_root = context.selection_item(0)
-  ui.add_context(item, project_root)
+  ui.add_context(item, project_root, { focus = opts.focus, leave_visual = opts.leave_visual ~= false })
 end
 
 function M.append_context()
   local mode = vim.api.nvim_get_mode().mode
   local is_visual = mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19"
   if is_visual then
-    M.append_selection()
+    M.append_selection({ leave_visual = true })
   else
     M.append_file()
   end
