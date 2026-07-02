@@ -157,7 +157,7 @@ assert_true(vim.fn.maparg("<leader>Xr", "n") == "", "rename session keymap shoul
 assert_true(vim.fn.maparg("<leader>Xm", "n") ~= "", "model picker keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xt", "n") ~= "", "variant picker keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xq", "n") ~= "", "quick ask keymap should be mapped")
-assert_true(vim.fn.maparg("<leader>Xq", "i") ~= "", "insert quick ask keymap should be mapped")
+assert_true(vim.fn.maparg("<leader>Xq", "i") == "", "quick ask leader keymap should not be mapped in insert mode")
 assert_true(vim.fn.maparg("<leader>XQ", "n") ~= "", "normal quick context keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>XQ", "v") ~= "", "visual quick context keymap should be mapped")
 assert_true(vim.fn.maparg("<leader>Xv", "n") == "", "old variant keymap should not be mapped")

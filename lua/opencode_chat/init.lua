@@ -71,7 +71,7 @@ local function set_configured_keymaps(keymaps)
     rename_session = { mode = "n", rhs = function() require("opencode_chat").rename_session() end, desc = "Rename opencode session" },
     models = { mode = "n", rhs = function() require("opencode_chat").show_models() end, desc = "Select opencode model" },
     variants = { mode = "n", rhs = function() require("opencode_chat").show_variants() end, desc = "Select opencode variant" },
-    quick = { mode = { "n", "i" }, rhs = function() require("opencode_chat").quick_toggle_from_keymap() end, desc = "Open opencode quick ask" },
+    quick = { mode = "n", rhs = function() require("opencode_chat").quick() end, desc = "Open opencode quick ask" },
     quick_context = { mode = { "n", "v" }, rhs = function() require("opencode_chat").quick_append_context() end, desc = "Append context to opencode quick ask" },
   }
   for name, lhs in pairs(keymaps) do

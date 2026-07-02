@@ -80,7 +80,7 @@ require("opencode_chat").setup({
 - Normal/Visual `<leader>Xe`：追加当前文件或 Visual 选区上下文，保持代码 pane 焦点
 - Visual `<M-->`：旧选区上下文追加入口，会聚焦 Chat input
 - Normal `<leader>Xl` / `<leader>Xn` / `<leader>Xm` / `<leader>Xt`：选择 session、新建 session、选择 model、选择 variant；session picker 内 `r` 重命名、`d` 确认删除
-- Normal/Insert `<leader>Xq`：打开 Quick Ask 临时答疑；Normal/Visual `<leader>XQ`：向 Quick Ask 追加独立上下文
+- Normal `<leader>Xq`：打开 Quick Ask 临时答疑；Normal/Visual `<leader>XQ`：向 Quick Ask 追加独立上下文
 
 `:OpencodeToggle` 在当前 tab 面板隐藏时打开 Chat 镜像；当前 tab 面板已打开但当前焦点不在 Chat 内时，会重新聚焦到 Chat 输入区；焦点已在 Chat 内时会隐藏所有 tab 的 Chat UI。只要 Chat 处于可见状态，新建或切入 tab 会自动显示同一份 Chat 镜像。
 
