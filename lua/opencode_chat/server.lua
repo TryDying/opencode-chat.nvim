@@ -184,6 +184,16 @@ local function merge_sessions(base, extra)
   return out
 end
 
+local function flush_waiters(ok, err)
+  local waiters = state.waiters
+  state.waiters = {}
+  for _, waiter in ipairs(waiters) do
+    vim.schedule(function()
+      waiter(ok, state, err)
+    end)
+  end
+end
+
 function M.ensure_server(startpath, cb)
   local cfg = config.get()
 
@@ -213,12 +223,8 @@ function M.ensure_server(startpath, cb)
       end,
     })
     if state.job_id <= 0 then
-      local waiters = state.waiters
-      state.waiters = {}
       state.starting = false
-      for _, waiter in ipairs(waiters) do
-        waiter(false, state, "failed to start opencode serve")
-      end
+      flush_waiters(false, "failed to start opencode serve")
       return
     end
     state.started = true
@@ -228,27 +234,25 @@ function M.ensure_server(startpath, cb)
     if not ok then
       state.ready = false
       state.starting = false
-      local waiters = state.waiters
-      state.waiters = {}
-      for _, waiter in ipairs(waiters) do
-        waiter(false, state, result and (result.stderr or result.stdout) or "opencode server not ready")
-      end
+      flush_waiters(false, result and (result.stderr or result.stdout) or "opencode server not ready")
       return
     end
     client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
       state.project_id = project_id
       state.ready = true
       state.starting = false
-      local waiters = state.waiters
-      state.waiters = {}
-      for _, waiter in ipairs(waiters) do
-        waiter(true, state)
-      end
+      flush_waiters(true)
     end)
   end)
 end
 
 function M.create_session(cb)
+  if vim.in_fast_event() then
+    vim.schedule(function()
+      M.create_session(cb)
+    end)
+    return
+  end
   local cfg = config.get()
   client.create_session(state.root, { host = cfg.host, port = state.port, agent = cfg.agent, model = config.current_model() }, function(created, session_id, data, create_result, api_style)
     if not created then
