@@ -286,6 +286,7 @@ assert_eq(vim.wo[ui.state().status_win].winbar, "", "status pane should not rese
 assert_eq(config.get().ui.width, 0.4, "chat panel width should be configurable")
 assert_eq(config.get().ui.height, 1.0, "chat panel height should be configurable")
 assert_eq(config.get().ui.message_height, nil, "message pane height should be optionally configurable")
+assert_eq(config.get().stream_subscribe_delay_ms, 120, "stream subscribe delay should be configurable")
 
 ui.set_input("这是啥")
 opencode.submit()

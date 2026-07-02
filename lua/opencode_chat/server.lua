@@ -337,6 +337,8 @@ local function send_to_session(current, text, cb, events, set_active)
   local model = config.current_model()
   local streamed_text = ""
   local wait_handle
+  local send_started = false
+  local cancelled = false
   local stream = client.subscribe_events({ host = cfg.host, port = current.port }, function(event)
     local session_id = event_session_id(event)
     if session_id and session_id ~= current.session_id then
@@ -362,6 +364,7 @@ local function send_to_session(current, text, cb, events, set_active)
   end
   local handle = {
     cancel = function()
+      cancelled = true
       cancel_stream()
       if send_handle and send_handle.kill then
         pcall(function()
@@ -375,39 +378,58 @@ local function send_to_session(current, text, cb, events, set_active)
       end
     end
   }
-  send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
-    debug.log("server", "send_message.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error, reply_len = #(reply or "") })
-    cancel_stream()
-    if not sent then
-      if set_active then
-        set_active(nil)
-      end
-      cb(false, nil, client.format_error(result, "prompt failed"))
+  local function finish_active()
+    if set_active then
+      set_active(nil)
+    end
+  end
+  local function send_message()
+    if cancelled then
+      debug.log("server", "send_message.skipped_cancelled", { session_id = current.session_id })
       return
     end
-
-    if reply and reply ~= "" then
-      if set_active then
-        set_active(nil)
-      end
-      cb(true, reply, data)
-      return
-    end
-
-    wait_handle = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
-      debug.log("server", "wait_for_assistant.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
-      if set_active then
-        set_active(nil)
-      end
-      if found then
-        cb(true, assistant_text, history)
+    send_started = true
+    debug.log("server", "send_message.start", { session_id = current.session_id, delay_ms = cfg.stream_subscribe_delay_ms })
+    send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
+      debug.log("server", "send_message.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error, reply_len = #(reply or "") })
+      cancel_stream()
+      if not sent then
+        finish_active()
+        cb(false, nil, client.format_error(result, "prompt failed"))
         return
       end
-      cb(false, nil, client.format_error(history_result, "assistant response not found"))
+
+      if reply and reply ~= "" then
+        finish_active()
+        cb(true, reply, data)
+        return
+      end
+
+      wait_handle = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, function(found, assistant_text, history, history_result)
+        debug.log("server", "wait_for_assistant.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
+        finish_active()
+        if found then
+          cb(true, assistant_text, history)
+          return
+        end
+        cb(false, nil, client.format_error(history_result, "assistant response not found"))
+      end)
     end)
-  end)
+  end
+  local delay_ms = tonumber(cfg.stream_subscribe_delay_ms) or 0
+  if delay_ms > 0 and stream then
+    debug.log("server", "send_message.defer", { session_id = current.session_id, delay_ms = delay_ms })
+    vim.defer_fn(function()
+      send_message()
+    end, delay_ms)
+  else
+    send_message()
+  end
   if set_active then
     set_active(handle)
+  end
+  if not send_started then
+    debug.log("server", "send_to_session.pending_send", { session_id = current.session_id })
   end
   return handle
 end

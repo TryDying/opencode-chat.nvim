@@ -19,6 +19,7 @@ M.defaults = {
   root_markers = { ".root", ".git", ".svn", ".hg", ".project", ".ccls" },
   startup_timeout_ms = 5000,
   response_timeout_ms = 30000,
+  stream_subscribe_delay_ms = 120,
   ui = {
     width = 0.4,
     height = 1.0,
