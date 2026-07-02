@@ -310,3 +310,10 @@
 - 方案：`quick_ui.show()` 支持 `leave_visual`，Quick Visual context 追加在读取选区后传递该标记，渲染浮窗前退出 Visual/Select 模式。
 - 预防：测试必须覆盖 `quick_append_context` 在 active Visual selection 下追加选区并退出 Visual 模式，避免 Quick 与主 Chat 行为分叉。
 - commitID：96978ee
+
+## 2026-07-01：Server 启动中请求必须排队等待 ready
+
+- 问题：首次 Quick context 后立刻提问可能与 `opencode serve` 启动/ready 检测并发，旧 `ensure_server` 只要 job 存活就直接放行，导致后续请求卡在 Thinking。
+- 方案：为 server 状态增加 `ready/starting/waiters`，启动中重复请求进入队列，ready 和 project id 初始化完成后统一回调；Quick context 追加时只预热 server 不创建 session。
+- 预防：测试必须覆盖未打开主 Chat 时先 Quick context、再立即从 Quick input 提交的问题路径，防止启动竞态回归。
+- commitID：e27efcb
