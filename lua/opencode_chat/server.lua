@@ -14,6 +14,9 @@ local state = {
   project_id = nil,
   api_style = nil,
   started = false,
+  ready = false,
+  starting = false,
+  waiters = {},
   sessions = {},
 }
 
@@ -184,12 +187,18 @@ end
 function M.ensure_server(startpath, cb)
   local cfg = config.get()
 
-  if state.started and job_running(state.job_id) then
+  if state.ready and state.started and job_running(state.job_id) then
     cb(true, state)
+    return
+  elseif state.starting and state.started and job_running(state.job_id) then
+    table.insert(state.waiters, cb)
     return
   else
     state.root = root.find(startpath)
     state.port = cfg.port or port.pick(cfg.host)
+    state.ready = false
+    state.starting = true
+    state.waiters = { cb }
     local cmd = { cfg.command, "serve", "--port", tostring(state.port), "--hostname", cfg.host }
     state.job_id = vim.fn.jobstart(cmd, {
       cwd = state.root,
@@ -197,12 +206,19 @@ function M.ensure_server(startpath, cb)
       stderr_buffered = false,
       on_exit = function()
         state.started = false
+        state.ready = false
+        state.starting = false
         state.job_id = nil
         state.session_id = nil
       end,
     })
     if state.job_id <= 0 then
-      cb(false, state, "failed to start opencode serve")
+      local waiters = state.waiters
+      state.waiters = {}
+      state.starting = false
+      for _, waiter in ipairs(waiters) do
+        waiter(false, state, "failed to start opencode serve")
+      end
       return
     end
     state.started = true
@@ -210,12 +226,24 @@ function M.ensure_server(startpath, cb)
 
   client.wait_until_ready({ host = cfg.host, port = state.port, timeout_ms = cfg.startup_timeout_ms }, function(ok, result)
     if not ok then
-      cb(false, state, result and (result.stderr or result.stdout) or "opencode server not ready")
+      state.ready = false
+      state.starting = false
+      local waiters = state.waiters
+      state.waiters = {}
+      for _, waiter in ipairs(waiters) do
+        waiter(false, state, result and (result.stderr or result.stdout) or "opencode server not ready")
+      end
       return
     end
     client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
       state.project_id = project_id
-      cb(true, state)
+      state.ready = true
+      state.starting = false
+      local waiters = state.waiters
+      state.waiters = {}
+      for _, waiter in ipairs(waiters) do
+        waiter(true, state)
+      end
     end)
   end)
 end

@@ -83,6 +83,14 @@ local function usable_context_buf()
   return 0
 end
 
+local function warm_server(project_root)
+  server.ensure_server(project_root, function(ok, _state, err)
+    if not ok then
+      notify_error("opencode quick server startup failed: " .. tostring(err))
+    end
+  end)
+end
+
 local function delete_session(session, cb)
   if not session then
     if cb then
@@ -296,12 +304,14 @@ end
 function M.append_file()
   local item, project_root = context.file_item(usable_context_buf())
   ui.add_context(item, project_root)
+  warm_server(project_root)
 end
 
 function M.append_selection(opts)
   opts = opts or {}
   local item, project_root = context.selection_item(0)
   ui.add_context(item, project_root, { focus = opts.focus, leave_visual = opts.leave_visual ~= false })
+  warm_server(project_root)
 end
 
 function M.append_context()
