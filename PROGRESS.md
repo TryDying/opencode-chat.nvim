@@ -317,3 +317,10 @@
 - 方案：为 server 状态增加 `ready/starting/waiters`，启动中重复请求进入队列，ready 和 project id 初始化完成后统一回调；Quick context 追加时只预热 server 不创建 session。
 - 预防：测试必须覆盖未打开主 Chat 时先 Quick context、再立即从 Quick input 提交的问题路径，防止启动竞态回归。
 - commitID：e27efcb
+
+## 2026-07-01：Debug 日志不能成为隐式时序修复
+
+- 问题：Quick Ask 首次请求不开 debug 会卡住，开 debug 后因同步写日志变慢反而成功，说明真实依赖了事件订阅与 message 发送之间的隐式时序。
+- 方案：保留文件 debug 日志用于定位，但把日志暴露出的时序依赖显式化为 `stream_subscribe_delay_ms`，建立事件订阅后短暂延迟再发送 message。
+- 预防：遇到“开日志就好”的 Heisenbug 时，必须把日志带来的延迟/调度变化还原为明确逻辑，而不是继续依赖 debug 模式验证。
+- commitID：ba85092
