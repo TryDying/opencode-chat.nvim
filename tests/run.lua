@@ -90,6 +90,46 @@ local setup_config = {
 }
 opencode.setup(setup_config)
 
+local quick_first_script = vim.fn.tempname() .. ".lua"
+local quick_first_tmp = vim.fn.tempname()
+local quick_first_port = port.pick("127.0.0.1")
+vim.fn.writefile({
+  "local repo = " .. vim.inspect(cwd),
+  "local tmp = " .. vim.inspect(quick_first_tmp),
+  "local port = " .. tostring(quick_first_port),
+  "vim.opt.runtimepath:prepend(repo)",
+  "package.path = repo .. '/lua/?.lua;' .. repo .. '/lua/?/init.lua;' .. package.path",
+  "vim.cmd('runtime plugin/opencode_chat.lua')",
+  "local function assert_true(value, message) if not value then error(message or 'expected truthy') end end",
+  "local function wait_for(predicate, timeout_ms) local deadline = vim.loop.hrtime() + timeout_ms * 1000000; while vim.loop.hrtime() < deadline do if predicate() then return true end; vim.wait(50) end; return false end",
+  "vim.fn.mkdir(tmp .. '/.git', 'p')",
+  "vim.fn.mkdir(tmp .. '/src', 'p')",
+  "local file = tmp .. '/src/quick-first.lua'",
+  "vim.fn.writefile({ 'local value = 1', 'return value' }, file)",
+  "vim.cmd('edit ' .. vim.fn.fnameescape(file))",
+  "vim.bo.filetype = 'lua'",
+  "local opencode = require('opencode_chat')",
+  "local quick = require('opencode_chat.quick')",
+  "local quick_ui = require('opencode_chat.quick_ui')",
+  "local server = require('opencode_chat.server')",
+  "opencode.setup({ command = repo .. '/tests/fixtures/opencode', port = port, startup_timeout_ms = 3000, response_timeout_ms = 3000, agent = 'quick', model = 'deepseek/deepseek-v4-flash', providers = { deepseek = { variants = { 'low', 'medium', 'high', 'max' }, models = { { id = 'deepseek-v4-flash', default_variant = 'low' } } } } })",
+  "opencode.quick_append_context()",
+  "assert_true(#quick_ui.state().context == 1, 'quick_context first should queue context')",
+  "assert_true(vim.fn.maparg('<C-s>', 'i') ~= '', 'quick_context first should install input submit mapping')",
+  "quick_ui.set_input('why is this syntax valid?')",
+  "vim.api.nvim_set_current_win(quick_ui.state().input_win)",
+  "vim.cmd('startinsert')",
+  "vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<C-s>', true, false, true), 'xt', false)",
+  "assert_true(wait_for(function() local messages = quick_ui.state().messages; return quick.state().busy == false and messages[#messages] and messages[#messages].role == 'Assistant' and messages[#messages].text:match('why is this syntax valid') ~= nil end, 5000), 'quick_context first should still allow asking')",
+  "assert_true(server.state().session_id == nil, 'quick_context first should not create main chat session')",
+  "opencode.quick_close()",
+  "opencode.stop()",
+}, quick_first_script)
+local quick_first_result = vim.fn.system({ "nvim", "--headless", "-u", "NONE", "-l", quick_first_script })
+local quick_first_code = vim.v.shell_error
+vim.fn.delete(quick_first_script)
+assert_eq(quick_first_code, 0, "quick_context should work before main chat UI is opened: " .. quick_first_result)
+
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
 assert_true(vim.fn.exists(":OpencodeAppendContext") == 2, "append context command should be registered")
 assert_true(vim.fn.exists(":OpencodeContextRemove") == 2, "context remove command should be registered")
