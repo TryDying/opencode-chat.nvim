@@ -1,6 +1,7 @@
 local server = require("opencode_chat.server")
 local ui = require("opencode_chat.quick_ui")
 local context = require("opencode_chat.context")
+local debug = require("opencode_chat.debug")
 
 local M = {}
 
@@ -32,6 +33,7 @@ local function stop_spinner(status)
     spinner.timer = nil
   end
   ui.set_status(status or "Idle")
+  debug.log("quick", "status", { status = status or "Idle", busy = request.busy, request_id = request.id })
 end
 
 local function start_spinner(label)
@@ -52,6 +54,11 @@ end
 local function build_prompt(text)
   local items, project_root = ui.consume_context()
   local context_text = ui.context_prompt(items)
+  local labels = {}
+  for _, item in ipairs(items or {}) do
+    table.insert(labels, item.label)
+  end
+  debug.log("quick", "build_prompt", { text_len = #(text or ""), context_count = #labels, context_labels = labels, project_root = project_root })
   if context_text == "" then
     return text, project_root
   end
@@ -84,7 +91,9 @@ local function usable_context_buf()
 end
 
 local function warm_server(project_root)
+  debug.log("quick", "warm_server", { project_root = project_root })
   server.ensure_server(project_root, function(ok, _state, err)
+    debug.log("quick", "warm_server.done", { ok = ok, err = err, root = _state and _state.root, port = _state and _state.port, ready = _state and _state.ready })
     if not ok then
       notify_error("opencode quick server startup failed: " .. tostring(err))
     end
@@ -92,6 +101,7 @@ local function warm_server(project_root)
 end
 
 local function delete_session(session, cb)
+  debug.log("quick", "delete_session", { session_id = session and session.session_id, port = session and session.port })
   if not session then
     if cb then
       cb(true)
@@ -99,6 +109,7 @@ local function delete_session(session, cb)
     return
   end
   local sync_ok = server.delete_ephemeral_sync(session)
+  debug.log("quick", "delete_session.sync_done", { ok = sync_ok, session_id = session.session_id })
   if sync_ok then
     if cb then
       cb(true)
@@ -123,6 +134,7 @@ end
 local function cleanup_session(opts, cb)
   opts = opts or {}
   local session = request.session
+  debug.log("quick", "cleanup_session", { abort = opts.abort, busy = request.busy, session_id = session and session.session_id, has_handle = request.handle ~= nil })
   request.session = nil
   if (opts.abort or request.busy) and request.handle and request.handle.cancel then
     request.handle.cancel()
@@ -147,9 +159,11 @@ local function cleanup_session(opts, cb)
 end
 
 local function send_with_session(prompt, project_root, request_id)
+  debug.log("quick", "send_with_session", { request_id = request_id, session_id = request.session and request.session.session_id, project_root = project_root, prompt_len = #(prompt or ""), prompt_preview = debug.preview(prompt) })
   local streamed = false
   request.handle = server.send_ephemeral(request.session, prompt, function(ok, reply, err)
     vim.schedule(function()
+      debug.log("quick", "send_with_session.done", { request_id = request_id, current_request_id = request.id, ok = ok, reply_len = #(reply or ""), err = err })
       if request_id ~= request.id then
         return
       end
@@ -170,6 +184,7 @@ local function send_with_session(prompt, project_root, request_id)
     on_delta = function(text)
       streamed = true
       vim.schedule(function()
+        debug.log("quick", "delta", { request_id = request_id, current_request_id = request.id, text_len = #(text or "") })
         if request_id == request.id then
           stop_spinner("Streaming")
           ui.update_last("Assistant", text)
@@ -180,6 +195,7 @@ local function send_with_session(prompt, project_root, request_id)
   })
 
   if not request.handle and not request.session then
+    debug.log("quick", "send_with_session.no_handle", { request_id = request_id })
     request.busy = false
     stop_spinner("Error")
     ui.replace_last_if("Assistant", "Thinking...", "Error", "quick session is missing")
@@ -188,6 +204,7 @@ local function send_with_session(prompt, project_root, request_id)
 end
 
 function M.show(text)
+  debug.log("quick", "show", { has_text = text ~= nil and text ~= "" })
   ui.show()
   if text and text ~= "" then
     M.ask(text)
@@ -195,6 +212,7 @@ function M.show(text)
 end
 
 function M.submit()
+  debug.log("quick", "submit", { busy = request.busy, input_len = #ui.input_text() })
   if request.busy then
     notify_error("opencode quick ask is still responding; use <C-c> first")
     return
@@ -209,6 +227,7 @@ function M.submit()
 end
 
 function M.ask(text)
+  debug.log("quick", "ask", { busy = request.busy, text_len = #(text or ""), text_preview = debug.preview(text), has_session = request.session ~= nil })
   if not text or text == "" then
     ui.show()
     return
@@ -223,6 +242,7 @@ function M.ask(text)
   request.cancelling = false
   request.id = request.id + 1
   local request_id = request.id
+  debug.log("quick", "ask.begin", { request_id = request_id, project_root = project_root, prompt_len = #prompt, has_session = request.session ~= nil })
   ui.add_message("User", prompt)
   ui.add_message("Assistant", "Thinking...")
   start_spinner("Thinking")
@@ -234,6 +254,7 @@ function M.ask(text)
 
   server.create_ephemeral_session(project_root, function(ok, session, err)
     vim.schedule(function()
+      debug.log("quick", "create_ephemeral.done", { request_id = request_id, current_request_id = request.id, ok = ok, err = err, session_id = session and session.session_id, port = session and session.port, api_style = session and session.api_style })
       if request_id ~= request.id then
         if ok and session then
           delete_session(session)
@@ -253,6 +274,7 @@ function M.ask(text)
 end
 
 function M.cancel()
+  debug.log("quick", "cancel", { busy = request.busy, cancelling = request.cancelling, session_id = request.session and request.session.session_id })
   if not request.busy then
     notify_error("no active opencode quick request")
     return
@@ -276,6 +298,7 @@ function M.cancel()
 end
 
 function M.close()
+  debug.log("quick", "close", { busy = request.busy, closing = request.closing, session_id = request.session and request.session.session_id })
   if request.closing then
     return
   end
@@ -303,6 +326,7 @@ end
 
 function M.append_file()
   local item, project_root = context.file_item(usable_context_buf())
+  debug.log("quick", "append_file", { label = item.label, project_root = project_root })
   ui.add_context(item, project_root)
   warm_server(project_root)
 end
@@ -310,6 +334,7 @@ end
 function M.append_selection(opts)
   opts = opts or {}
   local item, project_root = context.selection_item(0)
+  debug.log("quick", "append_selection", { label = item.label, project_root = project_root, leave_visual = opts.leave_visual ~= false })
   ui.add_context(item, project_root, { focus = opts.focus, leave_visual = opts.leave_visual ~= false })
   warm_server(project_root)
 end
@@ -317,6 +342,7 @@ end
 function M.append_context()
   local mode = vim.api.nvim_get_mode().mode
   local is_visual = mode == "v" or mode == "V" or mode == "\22" or mode == "s" or mode == "S" or mode == "\19"
+  debug.log("quick", "append_context", { mode = mode, is_visual = is_visual })
   if is_visual then
     M.append_selection({ leave_visual = true })
   else

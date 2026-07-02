@@ -2,6 +2,7 @@ local config = require("opencode_chat.config")
 local port = require("opencode_chat.port")
 local root = require("opencode_chat.root")
 local client = require("opencode_chat.client")
+local debug = require("opencode_chat.debug")
 
 local M = {}
 local active = nil
@@ -187,6 +188,7 @@ end
 local function flush_waiters(ok, err)
   local waiters = state.waiters
   state.waiters = {}
+  debug.log("server", "flush_waiters", { ok = ok, err = err, waiters = #waiters, ready = state.ready, starting = state.starting, port = state.port, root = state.root })
   for _, waiter in ipairs(waiters) do
     vim.schedule(function()
       waiter(ok, state, err)
@@ -196,12 +198,15 @@ end
 
 function M.ensure_server(startpath, cb)
   local cfg = config.get()
+  debug.log("server", "ensure_server", { startpath = startpath, started = state.started, ready = state.ready, starting = state.starting, job_id = state.job_id, running = job_running(state.job_id), waiters = #state.waiters, root = state.root, port = state.port })
 
   if state.ready and state.started and job_running(state.job_id) then
+    debug.log("server", "ensure_server.ready", { root = state.root, port = state.port, project_id = state.project_id })
     cb(true, state)
     return
   elseif state.starting and state.started and job_running(state.job_id) then
     table.insert(state.waiters, cb)
+    debug.log("server", "ensure_server.queued", { waiters = #state.waiters, root = state.root, port = state.port })
     return
   else
     state.root = root.find(startpath)
@@ -210,11 +215,13 @@ function M.ensure_server(startpath, cb)
     state.starting = true
     state.waiters = { cb }
     local cmd = { cfg.command, "serve", "--port", tostring(state.port), "--hostname", cfg.host }
+    debug.log("server", "start_job", { cmd = cmd, cwd = state.root })
     state.job_id = vim.fn.jobstart(cmd, {
       cwd = state.root,
       stdout_buffered = false,
       stderr_buffered = false,
       on_exit = function()
+        debug.log("server", "job_exit", { job_id = state.job_id, root = state.root, port = state.port })
         state.started = false
         state.ready = false
         state.starting = false
@@ -224,13 +231,16 @@ function M.ensure_server(startpath, cb)
     })
     if state.job_id <= 0 then
       state.starting = false
+      debug.log("server", "start_job.failed", { job_id = state.job_id })
       flush_waiters(false, "failed to start opencode serve")
       return
     end
     state.started = true
+    debug.log("server", "start_job.ok", { job_id = state.job_id, root = state.root, port = state.port })
   end
 
   client.wait_until_ready({ host = cfg.host, port = state.port, timeout_ms = cfg.startup_timeout_ms }, function(ok, result)
+    debug.log("server", "wait_until_ready.done", { ok = ok, status = result and result.status, code = result and result.code, error = result and result.error, port = state.port })
     if not ok then
       state.ready = false
       state.starting = false
@@ -238,6 +248,7 @@ function M.ensure_server(startpath, cb)
       return
     end
     client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
+      debug.log("server", "project_id.done", { ok = _project_ok, project_id = project_id, root = state.root })
       state.project_id = project_id
       state.ready = true
       state.starting = false
@@ -254,7 +265,9 @@ function M.create_session(cb)
     return
   end
   local cfg = config.get()
+  debug.log("server", "create_session", { root = state.root, port = state.port, model = config.current_model(), agent = cfg.agent })
   client.create_session(state.root, { host = cfg.host, port = state.port, agent = cfg.agent, model = config.current_model() }, function(created, session_id, data, create_result, api_style)
+    debug.log("server", "create_session.done", { created = created, session_id = session_id, api_style = api_style, status = create_result and create_result.status, error = create_result and create_result.error })
     if not created then
       cb(false, state, client.format_error(create_result, "failed to create session"))
       return
@@ -314,6 +327,7 @@ end
 
 local function send_to_session(current, text, cb, events, set_active)
   local cfg = config.get()
+  debug.log("server", "send_to_session", { session_id = current and current.session_id, port = current and current.port, api_style = current and current.api_style, text_len = #(text or ""), text_preview = debug.preview(text) })
   if vim.in_fast_event() then
     vim.schedule(function()
       send_to_session(current, text, cb, events, set_active)
@@ -330,6 +344,7 @@ local function send_to_session(current, text, cb, events, set_active)
     end
     local text_delta, append = text_from_event(event)
     if text_delta ~= "" and events and events.on_delta then
+      debug.log("server", "stream.delta", { session_id = current.session_id, len = #text_delta, append = append, type = event.type })
       if append then
         streamed_text = streamed_text .. text_delta
       else
@@ -361,6 +376,7 @@ local function send_to_session(current, text, cb, events, set_active)
     end
   }
   send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
+    debug.log("server", "send_message.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error, reply_len = #(reply or "") })
     cancel_stream()
     if not sent then
       if set_active then
@@ -379,6 +395,7 @@ local function send_to_session(current, text, cb, events, set_active)
     end
 
     wait_handle = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.startup_timeout_ms }, function(found, assistant_text, history, history_result)
+      debug.log("server", "wait_for_assistant.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
       if set_active then
         set_active(nil)
       end
@@ -409,12 +426,15 @@ end
 
 function M.create_ephemeral_session(startpath, cb)
   local cfg = config.get()
+  debug.log("server", "create_ephemeral_session", { startpath = startpath })
   M.ensure_server(startpath, function(ok, current, err)
+    debug.log("server", "create_ephemeral_session.ensure_done", { ok = ok, err = err, root = current and current.root, port = current and current.port, ready = current and current.ready, starting = current and current.starting })
     if not ok then
       cb(false, nil, err)
       return
     end
     client.create_session(current.root, { host = cfg.host, port = current.port, agent = cfg.agent, model = config.current_model() }, function(created, session_id, _data, create_result, api_style)
+      debug.log("server", "create_ephemeral_session.done", { created = created, session_id = session_id, api_style = api_style, status = create_result and create_result.status, error = create_result and create_result.error })
       if not created then
         cb(false, nil, client.format_error(create_result, "failed to create quick session"))
         return
@@ -431,6 +451,7 @@ function M.create_ephemeral_session(startpath, cb)
 end
 
 function M.send_ephemeral(session, text, cb, events)
+  debug.log("server", "send_ephemeral", { session_id = session and session.session_id, port = session and session.port, api_style = session and session.api_style, text_len = #(text or "") })
   if not session or not session.session_id then
     cb(false, nil, "quick session is missing")
     return nil
@@ -439,6 +460,7 @@ function M.send_ephemeral(session, text, cb, events)
 end
 
 function M.abort_ephemeral(session, cb)
+  debug.log("server", "abort_ephemeral", { session_id = session and session.session_id, port = session and session.port })
   if not session or not session.session_id then
     if cb then
       cb(false, "quick session is missing")
@@ -453,6 +475,7 @@ function M.abort_ephemeral(session, cb)
 end
 
 function M.delete_ephemeral(session, cb)
+  debug.log("server", "delete_ephemeral", { session_id = session and session.session_id, port = session and session.port })
   if not session or not session.session_id then
     if cb then
       cb(true)
@@ -467,6 +490,7 @@ function M.delete_ephemeral(session, cb)
 end
 
 function M.delete_ephemeral_sync(session)
+  debug.log("server", "delete_ephemeral_sync", { session_id = session and session.session_id, port = session and session.port })
   if not session or not session.session_id then
     return true
   end

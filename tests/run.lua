@@ -38,6 +38,7 @@ local server = require("opencode_chat.server")
 local ui = require("opencode_chat.ui")
 local quick = require("opencode_chat.quick")
 local quick_ui = require("opencode_chat.quick_ui")
+local debug = require("opencode_chat.debug")
 
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp .. "/.git", "p")
@@ -89,6 +90,12 @@ local setup_config = {
   },
 }
 opencode.setup(setup_config)
+
+local debug_log = tmp .. "/opencode-chat-debug.log"
+vim.env.OPENCODE_CHAT_DEBUG_LOG = debug_log
+debug.log("test", "debug_log_check", { ok = true })
+vim.env.OPENCODE_CHAT_DEBUG_LOG = nil
+assert_true(vim.fn.filereadable(debug_log) == 1 and table.concat(vim.fn.readfile(debug_log), "\n"):match("debug_log_check") ~= nil, "debug log should be controlled by OPENCODE_CHAT_DEBUG_LOG")
 
 local quick_first_script = vim.fn.tempname() .. ".lua"
 local quick_first_tmp = vim.fn.tempname()

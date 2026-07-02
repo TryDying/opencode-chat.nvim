@@ -1,4 +1,5 @@
 local config = require("opencode_chat.config")
+local debug = require("opencode_chat.debug")
 
 local M = {}
 
@@ -127,6 +128,7 @@ end
 local function open_windows()
   ensure_buffers()
   if valid_win(state.message_win) and valid_win(state.input_win) and valid_win(state.status_win) then
+    debug.log("quick_ui", "open_windows.reuse", { message_win = state.message_win, input_win = state.input_win, status_win = state.status_win })
     return
   end
   local g = geometry()
@@ -149,6 +151,7 @@ local function open_windows()
   set_float_options(state.message_win)
   set_float_options(state.input_win)
   set_float_options(state.status_win)
+  debug.log("quick_ui", "open_windows.created", { message_win = state.message_win, input_win = state.input_win, status_win = state.status_win, width = g.width, height = g.height })
 end
 
 function M.state()
@@ -204,6 +207,7 @@ end
 
 function M.show(opts)
   opts = opts or {}
+  debug.log("quick_ui", "show", { focus = opts.focus, leave_visual = opts.leave_visual, visible = state.visible })
   state.visible = true
   if opts.focus ~= "none" or opts.leave_visual then
     leave_visual_mode()
@@ -234,6 +238,7 @@ function M.set_status(text)
 end
 
 function M.hide()
+  debug.log("quick_ui", "hide", { message_win = state.message_win, input_win = state.input_win, status_win = state.status_win })
   state.visible = false
   for _, win in ipairs({ state.message_win, state.input_win, state.status_win }) do
     if valid_win(win) then
@@ -246,6 +251,7 @@ function M.hide()
 end
 
 function M.close()
+  debug.log("quick_ui", "close", { messages = #state.messages, context = #state.context })
   M.hide()
   for _, buf in ipairs({ state.message_buf, state.input_buf, state.status_buf }) do
     if valid_buf(buf) then
@@ -270,6 +276,7 @@ end
 
 function M.set_input(text)
   ensure_buffers()
+  debug.log("quick_ui", "set_input", { len = #(text or ""), preview = debug.preview(text) })
   vim.api.nvim_buf_set_lines(state.input_buf, 0, -1, false, vim.split(text or "", "\n", { plain = true }))
 end
 
@@ -278,6 +285,7 @@ function M.clear_input()
 end
 
 function M.add_message(role, text)
+  debug.log("quick_ui", "add_message", { role = role, len = #(text or ""), preview = debug.preview(text) })
   table.insert(state.messages, { role = role, text = text })
   M.show({ focus = "input" })
 end
@@ -293,6 +301,7 @@ function M.replace_last_if(role, old_text, new_role, new_text)
 end
 
 function M.update_last(role, text)
+  debug.log("quick_ui", "update_last", { role = role, len = #(text or ""), preview = debug.preview(text) })
   local messages = state.messages
   if messages[#messages] and messages[#messages].role == role then
     messages[#messages].text = text
@@ -308,6 +317,7 @@ end
 
 function M.add_context(item, project_root, opts)
   opts = opts or {}
+  debug.log("quick_ui", "add_context", { label = item and item.label, project_root = project_root, focus = opts.focus, leave_visual = opts.leave_visual })
   for index, existing in ipairs(state.context) do
     if existing.label == item.label then
       state.context[index] = item
@@ -351,6 +361,11 @@ end
 function M.consume_context()
   local items = state.context
   local project_root = state.context_root
+  local labels = {}
+  for _, item in ipairs(items or {}) do
+    table.insert(labels, item.label)
+  end
+  debug.log("quick_ui", "consume_context", { count = #labels, labels = labels, project_root = project_root })
   state.context = {}
   state.context_root = nil
   return items, project_root

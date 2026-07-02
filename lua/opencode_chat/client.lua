@@ -1,6 +1,24 @@
 local config = require("opencode_chat.config")
+local debug = require("opencode_chat.debug")
 
 local M = {}
+
+local function log_args(args)
+  local out = {}
+  local hide_next = false
+  for _, arg in ipairs(args or {}) do
+    if hide_next then
+      table.insert(out, "<redacted>")
+      hide_next = false
+    else
+      table.insert(out, arg)
+      if arg == "--data" or arg == "-d" then
+        hide_next = true
+      end
+    end
+  end
+  return out
+end
 
 local function url(path, opts)
   opts = opts or {}
@@ -90,12 +108,19 @@ function M.project_sessions_url(project_id, opts)
 end
 
 function M.run(args, cb)
+  debug.log("client", "run", { cmd = args and args[1], args = log_args(args) })
   if vim.system then
-    return vim.system(args, { text = true }, cb)
+    return vim.system(args, { text = true }, function(result)
+      debug.log("client", "run.done", { cmd = args and args[1], code = result and result.code, stderr = debug.preview(result and result.stderr), stdout_len = result and result.stdout and #result.stdout or 0 })
+      if cb then
+        cb(result)
+      end
+    end)
   end
 
   local result = vim.fn.system(args)
   local code = vim.v.shell_error
+  debug.log("client", "run.done", { cmd = args and args[1], code = code, stdout_len = #tostring(result or "") })
   if cb then
     cb({ code = code, stdout = result, stderr = code == 0 and "" or result })
   end
@@ -136,8 +161,10 @@ function M.subscribe_events(opts, on_event)
     end,
   })
   if job_id <= 0 then
+    debug.log("client", "subscribe_events.failed", { url = M.event_subscribe_url(opts), job_id = job_id })
     return nil
   end
+  debug.log("client", "subscribe_events.ok", { url = M.event_subscribe_url(opts), job_id = job_id })
   return {
     cancel = function()
       dispatch()
@@ -182,6 +209,7 @@ local function finish(result, cb)
   local stderr = result.stderr and result.stderr ~= "" and result.stderr or nil
   result.error = stderr or body or result.stdout or ""
   local ok = result.code == 0 and status and status >= 200 and status < 300
+  debug.log("client", "http.done", { ok = ok, status = status, code = result.code, body_len = #(body or ""), error = debug.preview(result.error) })
   cb(ok, decode_json(body), result)
 end
 
@@ -370,6 +398,7 @@ end
 
 function M.create_session(directory, opts, cb)
   opts = opts or {}
+  debug.log("client", "create_session", { directory = directory, url = M.session_url(opts), legacy_url = M.legacy_session_url(opts), model = opts.model, agent = opts.agent })
   local payload = { title = vim.fn.fnamemodify(directory, ":t") }
   if opts.agent then
     payload.agent = opts.agent
@@ -380,6 +409,7 @@ function M.create_session(directory, opts, cb)
 
   return post_json(M.session_url(opts), payload, function(ok, data, result)
     local id = data and ((data.data and data.data.id) or data.id)
+    debug.log("client", "create_session.session_done", { ok = ok, id = id, status = result and result.status, error = debug.preview(result and result.error) })
     if ok and id then
       cb(true, id, data, result, "session")
       return
@@ -387,6 +417,7 @@ function M.create_session(directory, opts, cb)
 
     post_json(M.legacy_session_url(opts), { directory = directory }, function(legacy_ok, legacy_data, legacy_result)
       local legacy_id = legacy_data and ((legacy_data.data and legacy_data.data.id) or legacy_data.id)
+      debug.log("client", "create_session.legacy_done", { ok = legacy_ok, id = legacy_id, status = legacy_result and legacy_result.status, error = debug.preview(legacy_result and legacy_result.error) })
       cb(legacy_ok and legacy_id ~= nil, legacy_id, legacy_data, legacy_result, "legacy")
     end)
   end)
@@ -394,6 +425,7 @@ end
 
 function M.send_message(session_id, text, opts, cb)
   opts = opts or {}
+  debug.log("client", "send_message", { session_id = session_id, api_style = opts.api_style, url = M.message_url(session_id, opts), legacy_url = M.legacy_prompt_url(session_id, opts), text_len = #(text or ""), text_preview = debug.preview(text), model = opts.model, agent = opts.agent })
   local payload = { parts = { { type = "text", text = text } } }
   if opts.model then
     payload.model = model_object(opts.model)
@@ -418,6 +450,7 @@ function M.send_message(session_id, text, opts, cb)
       legacy_payload.variant = opts.variant
     end
     return post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
+      debug.log("client", "send_message.legacy_done", { session_id = session_id, ok = legacy_ok, status = legacy_result and legacy_result.status, error = debug.preview(legacy_result and legacy_result.error), reply_len = #(M.extract_message_text(legacy_data) or "") })
       cb(legacy_ok, legacy_data, legacy_result, M.extract_message_text(legacy_data), "legacy")
     end)
   end
@@ -427,6 +460,7 @@ function M.send_message(session_id, text, opts, cb)
   end
 
   return post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
+    debug.log("client", "send_message.session_done", { session_id = session_id, ok = ok, status = result and result.status, error = debug.preview(result and result.error), reply_len = #(M.extract_message_text(data) or "") })
     if ok then
       cb(true, data, result, M.extract_message_text(data), "session")
       return
@@ -520,6 +554,7 @@ end
 
 function M.wait_for_assistant(session_id, opts, cb)
   opts = opts or {}
+  debug.log("client", "wait_for_assistant", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id })
   local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().response_timeout_ms) * 1000000)
   local token = { cancelled = false, handle = nil }
 
@@ -539,6 +574,7 @@ function M.wait_for_assistant(session_id, opts, cb)
     end
 
     token.handle = M.get_messages(session_id, opts, function(ok, data, result)
+      debug.log("client", "wait_for_assistant.poll_done", { session_id = session_id, ok = ok, status = result and result.status, text_len = #(ok and M.extract_assistant_text(data) or "") })
       if token.cancelled then
         cb(false, "", nil, { body = "cancelled" })
         return
@@ -551,6 +587,7 @@ function M.wait_for_assistant(session_id, opts, cb)
 
       if not ok and opts.project_id then
         token.handle = M.get_project_messages(opts.project_id, session_id, opts, function(project_ok, project_data, project_result)
+          debug.log("client", "wait_for_assistant.project_poll_done", { session_id = session_id, project_id = opts.project_id, ok = project_ok, status = project_result and project_result.status, text_len = #(project_ok and M.extract_assistant_text(project_data) or "") })
           if token.cancelled then
             cb(false, "", nil, { body = "cancelled" })
             return
@@ -561,6 +598,7 @@ function M.wait_for_assistant(session_id, opts, cb)
             return
           end
           if vim.loop.hrtime() >= deadline then
+            debug.log("client", "wait_for_assistant.timeout", { session_id = session_id, project = true })
             cb(false, "", project_data, project_result)
             return
           end
@@ -570,6 +608,7 @@ function M.wait_for_assistant(session_id, opts, cb)
       end
 
       if vim.loop.hrtime() >= deadline then
+        debug.log("client", "wait_for_assistant.timeout", { session_id = session_id, project = false })
         cb(false, "", data, result)
         return
       end
@@ -583,9 +622,11 @@ end
 
 function M.wait_until_ready(opts, cb)
   opts = opts or {}
+  debug.log("client", "wait_until_ready", { url = M.app_url(opts), timeout_ms = opts.timeout_ms })
   local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().startup_timeout_ms) * 1000000)
   local function poll()
     M.run({ "curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", M.app_url(opts) }, function(result)
+      debug.log("client", "wait_until_ready.poll_done", { code = result.code, stdout = tostring(result.stdout or ""), stderr = debug.preview(result.stderr) })
       if result.code == 0 and tostring(result.stdout or ""):match("^2") then
         cb(true)
         return
