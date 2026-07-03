@@ -47,10 +47,6 @@ function M.doc_url(opts)
   return url("/doc", opts)
 end
 
-function M.event_subscribe_url(opts)
-  return url("/event/subscribe", opts)
-end
-
 function M.session_url(opts)
   return url("/session", opts)
 end
@@ -127,54 +123,6 @@ function M.run(args, cb)
   return nil
 end
 
-function M.subscribe_events(opts, on_event)
-  opts = opts or {}
-  local data_lines = {}
-  local function dispatch()
-    if #data_lines == 0 then
-      return
-    end
-    local payload = table.concat(data_lines, "\n")
-    data_lines = {}
-    if payload == "" then
-      return
-    end
-    local ok, event = pcall(vim.json.decode, payload)
-    if ok and type(event) == "table" and on_event then
-      on_event(event)
-    end
-  end
-  local job_id = vim.fn.jobstart({ "curl", "-sS", "-N", M.event_subscribe_url(opts) }, {
-    stdout_buffered = false,
-    stderr_buffered = false,
-    on_stdout = function(_, data)
-      for _, line in ipairs(data or {}) do
-        if line == "" then
-          dispatch()
-        else
-          local payload = line:match("^data:%s?(.*)$")
-          if payload then
-            table.insert(data_lines, payload)
-          end
-        end
-      end
-    end,
-  })
-  if job_id <= 0 then
-    debug.log("client", "subscribe_events.failed", { url = M.event_subscribe_url(opts), job_id = job_id })
-    return nil
-  end
-  debug.log("client", "subscribe_events.ok", { url = M.event_subscribe_url(opts), job_id = job_id })
-  return {
-    cancel = function()
-      dispatch()
-      pcall(function()
-        vim.fn.jobstop(job_id)
-      end)
-    end,
-  }
-end
-
 local function decode_json(text)
   if not text or text == "" then
     return nil
@@ -199,6 +147,16 @@ local function with_status(args)
   local copy = vim.deepcopy(args)
   table.insert(copy, "-w")
   table.insert(copy, "\n%{http_code}")
+  return copy
+end
+
+local function with_timeout(args, timeout_ms)
+  if not timeout_ms or timeout_ms <= 0 then
+    return args
+  end
+  local copy = vim.deepcopy(args)
+  table.insert(copy, "--max-time")
+  table.insert(copy, tostring(math.max(1, math.ceil(timeout_ms / 1000))))
   return copy
 end
 
@@ -230,14 +188,14 @@ function M.format_error(result, fallback)
   return body ~= "" and body or (fallback or "opencode request failed")
 end
 
-local function get_json(target_url, cb)
-  return M.run(with_status({ "curl", "-sS", target_url }), function(result)
+local function get_json(target_url, cb, timeout_ms)
+  return M.run(with_status(with_timeout({ "curl", "-sS", target_url }, timeout_ms)), function(result)
     finish(result, cb)
   end)
 end
 
-local function post_json(target_url, payload, cb)
-  return M.run(with_status({
+local function post_json(target_url, payload, cb, timeout_ms)
+  return M.run(with_status(with_timeout({
     "curl",
     "-sS",
     "-X",
@@ -247,7 +205,7 @@ local function post_json(target_url, payload, cb)
     "Content-Type: application/json",
     "--data",
     vim.json.encode(payload),
-  }), function(result)
+  }, timeout_ms)), function(result)
     finish(result, cb)
   end)
 end
@@ -452,7 +410,7 @@ function M.send_message(session_id, text, opts, cb)
     return post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
       debug.log("client", "send_message.legacy_done", { session_id = session_id, ok = legacy_ok, status = legacy_result and legacy_result.status, error = debug.preview(legacy_result and legacy_result.error), reply_len = #(M.extract_message_text(legacy_data) or "") })
       cb(legacy_ok, legacy_data, legacy_result, M.extract_message_text(legacy_data), "legacy")
-    end)
+    end, opts.timeout_ms or config.get().response_timeout_ms)
   end
 
   if opts.api_style == "legacy" then
@@ -472,7 +430,7 @@ function M.send_message(session_id, text, opts, cb)
     end
 
     return send_legacy()
-  end)
+  end, opts.timeout_ms or config.get().response_timeout_ms)
 end
 
 function M.list_sessions(opts, cb)

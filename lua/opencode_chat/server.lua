@@ -293,39 +293,7 @@ function M.ensure_started(startpath, cb)
   end)
 end
 
-local function event_session_id(event)
-  local props = event and event.properties
-  if type(props) ~= "table" then
-    return nil
-  end
-  return props.sessionID or props.sessionId or props.session_id or (props.session and props.session.id) or (props.message and props.message.sessionID)
-end
-
-local function text_from_event(event)
-  if type(event) ~= "table" then
-    return "", false
-  end
-  if event.type ~= "message.part.updated" and event.type ~= "message.part.delta" then
-    return "", false
-  end
-  local part = event.properties and event.properties.part
-  if type(part) == "table" and part.type ~= nil and part.type ~= "text" then
-    return "", false
-  end
-  if type(part) == "table" and type(part.text) == "string" then
-    return part.text, event.type == "message.part.delta"
-  end
-  local props = event.properties or {}
-  if type(props.text) == "string" then
-    return props.text, event.type == "message.part.delta"
-  end
-  if type(props.delta) == "string" then
-    return props.delta, true
-  end
-  return "", false
-end
-
-local function send_to_session(current, text, cb, events, set_active)
+local function send_to_session(current, text, cb, _events, set_active)
   local cfg = config.get()
   debug.log("server", "send_to_session", { session_id = current and current.session_id, port = current and current.port, api_style = current and current.api_style, text_len = #(text or ""), text_preview = debug.preview(text) })
   if vim.in_fast_event() then
@@ -335,37 +303,12 @@ local function send_to_session(current, text, cb, events, set_active)
     return nil
   end
   local model = config.current_model()
-  local streamed_text = ""
   local wait_handle
-  local send_started = false
   local cancelled = false
-  local stream = client.subscribe_events({ host = cfg.host, port = current.port }, function(event)
-    local session_id = event_session_id(event)
-    if session_id and session_id ~= current.session_id then
-      return
-    end
-    local text_delta, append = text_from_event(event)
-    if text_delta ~= "" and events and events.on_delta then
-      debug.log("server", "stream.delta", { session_id = current.session_id, len = #text_delta, append = append, type = event.type })
-      if append then
-        streamed_text = streamed_text .. text_delta
-      else
-        streamed_text = text_delta
-      end
-      events.on_delta(streamed_text)
-    end
-  end)
   local send_handle
-  local function cancel_stream()
-    if stream then
-      stream.cancel()
-      stream = nil
-    end
-  end
   local handle = {
     cancel = function()
       cancelled = true
-      cancel_stream()
       if send_handle and send_handle.kill then
         pcall(function()
           send_handle:kill(15)
@@ -388,11 +331,9 @@ local function send_to_session(current, text, cb, events, set_active)
       debug.log("server", "send_message.skipped_cancelled", { session_id = current.session_id })
       return
     end
-    send_started = true
-    debug.log("server", "send_message.start", { session_id = current.session_id, delay_ms = cfg.stream_subscribe_delay_ms })
-    send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style }, function(sent, data, result, reply)
+    debug.log("server", "send_message.start", { session_id = current.session_id })
+    send_handle = client.send_message(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, api_style = current.api_style, timeout_ms = cfg.response_timeout_ms }, function(sent, data, result, reply)
       debug.log("server", "send_message.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error, reply_len = #(reply or "") })
-      cancel_stream()
       if not sent then
         finish_active()
         cb(false, nil, client.format_error(result, "prompt failed"))
@@ -416,20 +357,9 @@ local function send_to_session(current, text, cb, events, set_active)
       end)
     end)
   end
-  local delay_ms = tonumber(cfg.stream_subscribe_delay_ms) or 0
-  if delay_ms > 0 and stream then
-    debug.log("server", "send_message.defer", { session_id = current.session_id, delay_ms = delay_ms })
-    vim.defer_fn(function()
-      send_message()
-    end, delay_ms)
-  else
-    send_message()
-  end
+  send_message()
   if set_active then
     set_active(handle)
-  end
-  if not send_started then
-    debug.log("server", "send_to_session.pending_send", { session_id = current.session_id })
   end
   return handle
 end

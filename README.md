@@ -9,7 +9,7 @@
 - Chat 输入区按 `<C-s>` 提交。
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
 - Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
-- Chat UI 底部固定 status bar，显示 Idle/Thinking/Streaming/Error 等状态和当前 model/variant。
+- Chat UI 底部固定 status bar，显示 Idle/Thinking/Error 等状态和当前 model/variant。
 - Chat UI 是 tab mirror：只要 Chat 当前可见，新建/切入 tab 会自动显示同一份 Chat；所有 tab 共享 messages、input 草稿、context、session 和状态。
 - Chat UI 的 message/input/status 三个窗口作为一组关闭；对其中任意一个执行 `:q` 会同步关闭另外两个窗口。
 - 当前 tab 只剩 opencode-chat 的 message/input/status 窗口时，会自动清理 Chat：有其它 tab 时关闭当前 tab，最后一个 tab 时允许 Neovim 正常退出。
@@ -72,7 +72,7 @@ require("opencode_chat").setup({
 
 `model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。Lua 标识符不能包含 `-`，因此 `opencode-go` 这类 provider 可以写成 `["opencode-go"] = { ... }`，也可以写成 `{ id = "opencode-go", variants = ..., models = ... }` 的 array-style provider 条目。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
 
-如果当前 opencode server 支持 `/event/subscribe` SSE 事件流，插件会尝试根据 `message.part.delta` / `message.part.updated` 增量刷新 assistant 回复；不可用时自动退回非流式响应。
+插件不订阅 `/event/subscribe` SSE 事件流；发送 message 后优先使用 HTTP 响应中的 assistant 内容，必要时再轮询 message history，避免流式事件竞态。
 
 插件默认不绑定全局快捷键；如需快捷键，请在 `keymaps` 中显式配置：
 

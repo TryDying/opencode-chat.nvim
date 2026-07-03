@@ -262,7 +262,6 @@ assert_eq(client.delete_session_url("abc", { host = "127.0.0.1", port = 12345, d
 assert_eq(client.current_project_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/current", "current project URL should target project/current API")
 assert_eq(client.project_sessions_url("project", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project/session", "project sessions URL should target project-scoped sessions")
 assert_eq(client.project_sessions_url("project/with slash", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project%2Fwith%20slash/session", "project id should be URL encoded")
-assert_eq(client.event_subscribe_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/event/subscribe", "event subscribe URL should target SSE endpoint")
 assert_eq(client.extract_assistant_text({
   { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
   { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
@@ -286,7 +285,6 @@ assert_eq(vim.wo[ui.state().status_win].winbar, "", "status pane should not rese
 assert_eq(config.get().ui.width, 0.4, "chat panel width should be configurable")
 assert_eq(config.get().ui.height, 1.0, "chat panel height should be configurable")
 assert_eq(config.get().ui.message_height, nil, "message pane height should be optionally configurable")
-assert_eq(config.get().stream_subscribe_delay_ms, 120, "stream subscribe delay should be configurable")
 
 ui.set_input("这是啥")
 opencode.submit()
@@ -296,11 +294,12 @@ local session_file = tmp .. "/.opencode-chat-session.jsonl"
 assert_true(wait_for(function()
   local messages = ui.state().messages
   local last = messages[#messages]
-  return opencode._request.busy == true and last and last.role == "Assistant" and last.text ~= "Thinking..." and last.text:match("fake reply") ~= nil
-end, 3000), "assistant reply should stream before the request completes")
+  return opencode._request.busy == false and last and last.role == "Assistant" and last.text:match("fake reply") ~= nil
+end, 5000), "assistant reply should render from the message response")
 assert_true(wait_for(function()
   return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session-1"
 end, 5000), "submit should create session and send prompt to fake headless server")
+assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-events.jsonl") == 0, "message sending should not open SSE event subscriptions")
 
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
 assert_eq(session_payload.agent, "quick", "session create should include configured opencode agent")

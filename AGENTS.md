@@ -49,7 +49,7 @@ These routing rules are mandatory for this repository.
 - Session lists must be scoped to the current project/workspace: prefer `/project/:projectID/session`; if falling back to global `/session`, filter by `projectID` or normalized `directory`.
 - Hiding the Chat UI must close any open picker/menu, and focusing the message pane must not enter insert mode.
 - If all remaining windows in the current tab are opencode-chat panes, automatically close that tab when other tabs exist; in the last tab, close Chat panes and allow Neovim to quit rather than restoring a code buffer or leaving an empty buffer.
-- The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Streaming/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
+- The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
 - Chat panel sizing must be configurable through `ui.width`, `ui.height`, and optional `ui.message_height`.
 - Chat UI must support tab mirror mode: when Chat is globally visible, entering or creating a tab should automatically show that tab's Chat panes; messages, input draft, context, session, status, and backend server state are shared within one Neovim process.
 - Toggle should reveal/focus first for the current tab: if the current tab panel is visible but unfocused, focus the input pane; only hide when focus is already inside the Chat panel, and that hide must close Chat UI in all tabs.

@@ -160,7 +160,6 @@ end
 
 local function send_with_session(prompt, project_root, request_id)
   debug.log("quick", "send_with_session", { request_id = request_id, session_id = request.session and request.session.session_id, project_root = project_root, prompt_len = #(prompt or ""), prompt_preview = debug.preview(prompt) })
-  local streamed = false
   request.handle = server.send_ephemeral(request.session, prompt, function(ok, reply, err)
     vim.schedule(function()
       debug.log("quick", "send_with_session.done", { request_id = request_id, current_request_id = request.id, ok = ok, reply_len = #(reply or ""), err = err })
@@ -171,28 +170,12 @@ local function send_with_session(prompt, project_root, request_id)
       request.handle = nil
       stop_spinner(ok and "Idle" or "Error")
       if ok then
-        if streamed then
-          ui.update_last("Assistant", reply ~= "" and reply or "(empty response)")
-        else
-          ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
-        end
+        ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
       else
         ui.replace_last_if("Assistant", "Thinking...", "Error", tostring(err or "opencode quick request failed"))
       end
     end)
-  end, {
-    on_delta = function(text)
-      streamed = true
-      vim.schedule(function()
-        debug.log("quick", "delta", { request_id = request_id, current_request_id = request.id, text_len = #(text or "") })
-        if request_id == request.id then
-          stop_spinner("Streaming")
-          ui.update_last("Assistant", text)
-          ui.set_status("Streaming")
-        end
-      end)
-    end,
-  })
+  end)
 
   if not request.handle and not request.session then
     debug.log("quick", "send_with_session.no_handle", { request_id = request_id })
