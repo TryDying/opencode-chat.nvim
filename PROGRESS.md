@@ -324,3 +324,10 @@
 - 方案：保留文件 debug 日志用于定位，但把日志暴露出的时序依赖显式化为 `stream_subscribe_delay_ms`，建立事件订阅后短暂延迟再发送 message。
 - 预防：遇到“开日志就好”的 Heisenbug 时，必须把日志带来的延迟/调度变化还原为明确逻辑，而不是继续依赖 debug 模式验证。
 - commitID：ba85092
+
+## 2026-07-01：禁用无收益的 SSE 流式路径
+
+- 问题：真实使用中 SSE 没有带来可感知增量渲染，反而在首次 Quick context 后提问时引入事件订阅与 message 发送的时序竞态；固定延迟只能掩盖问题。
+- 方案：移除 `/event/subscribe` 发送路径和 `stream_subscribe_delay_ms` workaround，主 Chat 与 Quick Ask 统一使用 message HTTP 响应，必要时再轮询 history，并给 message 请求加 `response_timeout_ms` 超时。
+- 预防：测试必须断言发送消息不会打开 SSE 订阅；后续除非能证明流式收益大于竞态成本，否则不要重新引入 SSE。
+- commitID：f98ede5
