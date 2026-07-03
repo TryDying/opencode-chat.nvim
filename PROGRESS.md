@@ -331,3 +331,10 @@
 - 方案：移除 `/event/subscribe` 发送路径和 `stream_subscribe_delay_ms` workaround，主 Chat 与 Quick Ask 统一使用 message HTTP 响应，必要时再轮询 history，并给 message 请求加 `response_timeout_ms` 超时。
 - 预防：测试必须断言发送消息不会打开 SSE 订阅；后续除非能证明流式收益大于竞态成本，否则不要重新引入 SSE。
 - commitID：f98ede5
+
+## 2026-07-03：Server ready 前退出必须唤醒等待请求
+
+- 问题：真实 `opencode serve` 在 `/app` ready 前退出时，等待 server ready 的 Quick/UI 请求没有被唤醒，界面会一直停在 `Thinking...`。
+- 方案：`job_exit` 在 starting 阶段调用等待队列并返回明确错误；`/app` ready 探测的单次 curl 增加短超时，避免单个探测进程拖垮整体 startup deadline。
+- 预防：测试必须模拟 server 命令立即退出，断言 Quick Ask 从 `Thinking...` 进入 Error，而不是静默等待。
+- commitID：9c6f573
