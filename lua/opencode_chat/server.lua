@@ -18,11 +18,67 @@ local state = {
   ready = false,
   starting = false,
   waiters = {},
+  job_pid = nil,
+  job_stdout = {},
+  job_stderr = {},
+  job_exit_code = nil,
+  job_exit_type = nil,
   sessions = {},
 }
 
 local function job_running(job_id)
   return job_id and vim.fn.jobwait({ job_id }, 0)[1] == -1
+end
+
+local function append_tail(target, data)
+  for _, line in ipairs(data or {}) do
+    if line ~= "" then
+      table.insert(target, line)
+    end
+  end
+  while #target > 80 do
+    table.remove(target, 1)
+  end
+end
+
+local function join_tail(lines)
+  return table.concat(lines or {}, "\n")
+end
+
+local function job_summary(message)
+  local parts = { message or "opencode server failed" }
+  if state.job_exit_code ~= nil then
+    table.insert(parts, "exit_code=" .. tostring(state.job_exit_code))
+  end
+  if state.job_exit_type ~= nil then
+    table.insert(parts, "exit_type=" .. tostring(state.job_exit_type))
+  end
+  if state.job_pid ~= nil then
+    table.insert(parts, "pid=" .. tostring(state.job_pid))
+  end
+  if state.root ~= nil then
+    table.insert(parts, "cwd=" .. tostring(state.root))
+  end
+  local stderr = join_tail(state.job_stderr)
+  if stderr ~= "" then
+    table.insert(parts, "stderr:\n" .. stderr)
+  end
+  local stdout = join_tail(state.job_stdout)
+  if stdout ~= "" then
+    table.insert(parts, "stdout:\n" .. stdout)
+  end
+  return table.concat(parts, "\n")
+end
+
+local function job_pid(job_id)
+  if not job_id then
+    return nil
+  end
+  local ok, pid = pcall(vim.fn.jobpid, job_id)
+  if ok and type(pid) == "number" and pid > 0 then
+    return pid
+  end
+  return nil
 end
 
 local function normalize_path(value)
@@ -211,37 +267,64 @@ function M.ensure_server(startpath, cb)
   else
     state.root = root.find(startpath)
     state.port = cfg.port or port.pick(cfg.host)
+    debug.log("server", cfg.port and "port.configured" or "port.picked", { port = state.port, host = cfg.host })
     state.ready = false
     state.starting = true
     state.waiters = { cb }
+    state.job_pid = nil
+    state.job_stdout = {}
+    state.job_stderr = {}
+    state.job_exit_code = nil
+    state.job_exit_type = nil
     local cmd = { cfg.command, "serve", "--port", tostring(state.port), "--hostname", cfg.host }
     debug.log("server", "start_job", { cmd = cmd, cwd = state.root })
-    state.job_id = vim.fn.jobstart(cmd, {
+    local job_id
+    job_id = vim.fn.jobstart(cmd, {
       cwd = state.root,
       stdout_buffered = false,
       stderr_buffered = false,
-      on_exit = function()
+      on_stdout = function(_, data)
+        if state.job_id ~= job_id then
+          return
+        end
+        append_tail(state.job_stdout, data)
+        debug.log("server", "job_stdout", { job_id = job_id, data = data })
+      end,
+      on_stderr = function(_, data)
+        if state.job_id ~= job_id then
+          return
+        end
+        append_tail(state.job_stderr, data)
+        debug.log("server", "job_stderr", { job_id = job_id, data = data })
+      end,
+      on_exit = function(_, exit_code, exit_type)
         local was_starting = state.starting
-        local exited_job_id = state.job_id
-        debug.log("server", "job_exit", { job_id = exited_job_id, root = state.root, port = state.port, starting = state.starting, waiters = #state.waiters })
-        state.started = false
-        state.ready = false
-        state.starting = false
-        state.job_id = nil
-        state.session_id = nil
-        if was_starting then
-          flush_waiters(false, "opencode server exited before becoming ready")
+        local matches_current = state.job_id == job_id
+        debug.log("server", "job_exit", { job_id = job_id, pid = state.job_pid, root = state.root, port = state.port, starting = state.starting, waiters = #state.waiters, exit_code = exit_code, exit_type = exit_type, current = matches_current })
+        if matches_current then
+          state.job_exit_code = exit_code
+          state.job_exit_type = exit_type
+          state.started = false
+          state.ready = false
+          state.starting = false
+          state.job_id = nil
+          state.session_id = nil
+          if was_starting then
+            flush_waiters(false, job_summary("opencode server exited before becoming ready"))
+          end
         end
       end,
     })
+    state.job_id = job_id
     if state.job_id <= 0 then
       state.starting = false
       debug.log("server", "start_job.failed", { job_id = state.job_id })
       flush_waiters(false, "failed to start opencode serve")
       return
     end
+    state.job_pid = job_pid(state.job_id)
     state.started = true
-    debug.log("server", "start_job.ok", { job_id = state.job_id, root = state.root, port = state.port })
+    debug.log("server", "start_job.ok", { job_id = state.job_id, pid = state.job_pid, root = state.root, port = state.port })
   end
 
   client.wait_until_ready({ host = cfg.host, port = state.port, timeout_ms = cfg.startup_timeout_ms }, function(ok, result)
@@ -249,7 +332,7 @@ function M.ensure_server(startpath, cb)
     if not ok then
       state.ready = false
       state.starting = false
-      flush_waiters(false, result and (result.stderr or result.stdout) or "opencode server not ready")
+      flush_waiters(false, job_summary(result and (result.stderr or result.stdout) or "opencode server not ready"))
       return
     end
     client.get_project_id(state.root, { host = cfg.host, port = state.port }, function(_project_ok, project_id)
@@ -488,16 +571,40 @@ end
 
 function M.stop()
   M.cancel()
-  if job_running(state.job_id) then
-    vim.fn.jobstop(state.job_id)
+  local stopped_job = state.job_id
+  local stopped_pid = state.job_pid or job_pid(stopped_job)
+  if job_running(stopped_job) then
+    debug.log("server", "stop.begin", { job_id = stopped_job, pid = stopped_pid, root = state.root, port = state.port })
+    pcall(vim.fn.jobstop, stopped_job)
+    local result = vim.fn.jobwait({ stopped_job }, 1000)[1]
+    debug.log("server", "stop.jobwait", { job_id = stopped_job, pid = stopped_pid, result = result })
+    if result == -1 and stopped_pid then
+      debug.log("server", "stop.kill_term", { job_id = stopped_job, pid = stopped_pid })
+      pcall(vim.fn.system, { "kill", "-TERM", tostring(stopped_pid) })
+      result = vim.fn.jobwait({ stopped_job }, 1000)[1]
+    end
+    if result == -1 and stopped_pid then
+      debug.log("server", "stop.kill_kill", { job_id = stopped_job, pid = stopped_pid })
+      pcall(vim.fn.system, { "kill", "-KILL", tostring(stopped_pid) })
+      result = vim.fn.jobwait({ stopped_job }, 1000)[1]
+    end
+    debug.log("server", "stop.done", { job_id = stopped_job, pid = stopped_pid, result = result })
   end
+  state.waiters = {}
   state.root = nil
   state.port = nil
   state.job_id = nil
+  state.job_pid = nil
   state.session_id = nil
   state.project_id = nil
   state.api_style = nil
   state.started = false
+  state.ready = false
+  state.starting = false
+  state.job_stdout = {}
+  state.job_stderr = {}
+  state.job_exit_code = nil
+  state.job_exit_type = nil
   state.sessions = {}
 end
 

@@ -110,6 +110,12 @@ local function setup_autoclose()
       pcall(quick.close_if_current_window)
     end,
   })
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = group,
+    callback = function()
+      pcall(server.stop)
+    end,
+  })
 end
 
 function M.setup(opts)

@@ -140,10 +140,14 @@ assert_eq(quick_first_code, 0, "quick_context should work before main chat UI is
 local server_exit_script = vim.fn.tempname() .. ".lua"
 local server_exit_tmp = vim.fn.tempname()
 local server_exit_port = port.pick("127.0.0.1")
+local server_exit_cmd = vim.fn.tempname()
+vim.fn.writefile({ "#!/usr/bin/env sh", "echo startup boom >&2", "exit 7" }, server_exit_cmd)
+vim.fn.setfperm(server_exit_cmd, "rwx------")
 vim.fn.writefile({
   "local repo = " .. vim.inspect(cwd),
   "local tmp = " .. vim.inspect(server_exit_tmp),
   "local port = " .. tostring(server_exit_port),
+  "local command = " .. vim.inspect(server_exit_cmd),
   "vim.opt.runtimepath:prepend(repo)",
   "package.path = repo .. '/lua/?.lua;' .. repo .. '/lua/?/init.lua;' .. package.path",
   "vim.cmd('runtime plugin/opencode_chat.lua')",
@@ -157,14 +161,15 @@ vim.fn.writefile({
   "local opencode = require('opencode_chat')",
   "local quick = require('opencode_chat.quick')",
   "local quick_ui = require('opencode_chat.quick_ui')",
-  "opencode.setup({ command = 'false', port = port, startup_timeout_ms = 800, response_timeout_ms = 800, agent = 'quick', model = 'deepseek/deepseek-v4-flash', providers = { deepseek = { variants = { 'low' }, models = { { id = 'deepseek-v4-flash', default_variant = 'low' } } } } })",
+  "opencode.setup({ command = command, port = port, startup_timeout_ms = 800, response_timeout_ms = 800, agent = 'quick', model = 'deepseek/deepseek-v4-flash', providers = { deepseek = { variants = { 'low' }, models = { { id = 'deepseek-v4-flash', default_variant = 'low' } } } } })",
   "opencode.quick('hello')",
-  "assert_true(wait_for(function() local messages = quick_ui.state().messages; local last = messages[#messages]; return quick.state().busy == false and last and last.role == 'Error' and last.text:match('exited before becoming ready') ~= nil end, 3000), 'server exit before ready should surface an error instead of staying Thinking')",
+  "assert_true(wait_for(function() local messages = quick_ui.state().messages; local last = messages[#messages]; return quick.state().busy == false and last and last.role == 'Error' and last.text:match('exited before becoming ready') ~= nil and last.text:match('startup boom') ~= nil and last.text:match('exit_code=7') ~= nil end, 3000), 'server exit before ready should surface stderr and exit code instead of staying Thinking')",
   "opencode.quick_close()",
 }, server_exit_script)
 local server_exit_result = vim.fn.system({ "nvim", "--headless", "-u", "NONE", "-l", server_exit_script })
 local server_exit_code = vim.v.shell_error
 vim.fn.delete(server_exit_script)
+vim.fn.delete(server_exit_cmd)
 assert_eq(server_exit_code, 0, "server exit before ready should not leave quick ask thinking: " .. server_exit_result)
 
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
@@ -329,6 +334,7 @@ end, 5000), "assistant reply should render from the message response")
 assert_true(wait_for(function()
   return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session-1"
 end, 5000), "submit should create session and send prompt to fake headless server")
+assert_true(type(server.state().job_pid) == "number" and server.state().job_pid > 0, "server state should record the OS process id")
 assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-events.jsonl") == 0, "message sending should not open SSE event subscriptions")
 
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
@@ -688,6 +694,10 @@ assert_true(#vim.fn.readfile(session_file) >= 2, "cancel and explicit new sessio
 local updated = table.concat(vim.fn.readfile(file), "\n")
 assert_true(updated:match("return a %- b") ~= nil, "backend edit should update sandbox file")
 
+local final_job = server.state().job_id
 opencode.stop()
+if final_job then
+  assert_true(vim.fn.jobwait({ final_job }, 0)[1] ~= -1, "opencode.stop should wait for the fake server job to exit")
+end
 vim.fn.delete(tmp, "rf")
 print("opencode-chat.nvim tests passed")
