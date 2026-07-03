@@ -338,3 +338,10 @@
 - 方案：`job_exit` 在 starting 阶段调用等待队列并返回明确错误；`/app` ready 探测的单次 curl 增加短超时，避免单个探测进程拖垮整体 startup deadline。
 - 预防：测试必须模拟 server 命令立即退出，断言 Quick Ask 从 `Thinking...` 进入 Error，而不是静默等待。
 - commitID：9c6f573
+
+## 2026-07-03：Server job 必须可诊断且退出时强清理
+
+- 问题：动态端口来源不透明，fake/真实 `opencode serve` 可能在异常退出或 Neovim 退出后残留，且 server 启动失败时缺少 stdout/stderr/pid/exit code 诊断。
+- 方案：记录动态端口、job id、OS pid、stdout/stderr tail 和 exit code；`server.stop()` 等待 job 退出，必要时 TERM/KILL；`VimLeavePre` 兜底调用 stop。
+- 预防：测试必须覆盖 server 早退时错误包含 stderr/exit code，并断言 `opencode.stop()` 会等待 fake server job 退出。
+- commitID：45d51d6
