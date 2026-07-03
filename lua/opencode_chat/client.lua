@@ -583,7 +583,7 @@ function M.wait_until_ready(opts, cb)
   debug.log("client", "wait_until_ready", { url = M.app_url(opts), timeout_ms = opts.timeout_ms })
   local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().startup_timeout_ms) * 1000000)
   local function poll()
-    M.run({ "curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", M.app_url(opts) }, function(result)
+    M.run(with_timeout({ "curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", M.app_url(opts) }, 1000), function(result)
       debug.log("client", "wait_until_ready.poll_done", { code = result.code, stdout = tostring(result.stdout or ""), stderr = debug.preview(result.stderr) })
       if result.code == 0 and tostring(result.stdout or ""):match("^2") then
         cb(true)

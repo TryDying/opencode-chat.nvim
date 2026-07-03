@@ -221,12 +221,17 @@ function M.ensure_server(startpath, cb)
       stdout_buffered = false,
       stderr_buffered = false,
       on_exit = function()
-        debug.log("server", "job_exit", { job_id = state.job_id, root = state.root, port = state.port })
+        local was_starting = state.starting
+        local exited_job_id = state.job_id
+        debug.log("server", "job_exit", { job_id = exited_job_id, root = state.root, port = state.port, starting = state.starting, waiters = #state.waiters })
         state.started = false
         state.ready = false
         state.starting = false
         state.job_id = nil
         state.session_id = nil
+        if was_starting then
+          flush_waiters(false, "opencode server exited before becoming ready")
+        end
       end,
     })
     if state.job_id <= 0 then

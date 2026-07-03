@@ -137,6 +137,36 @@ local quick_first_code = vim.v.shell_error
 vim.fn.delete(quick_first_script)
 assert_eq(quick_first_code, 0, "quick_context should work before main chat UI is opened: " .. quick_first_result)
 
+local server_exit_script = vim.fn.tempname() .. ".lua"
+local server_exit_tmp = vim.fn.tempname()
+local server_exit_port = port.pick("127.0.0.1")
+vim.fn.writefile({
+  "local repo = " .. vim.inspect(cwd),
+  "local tmp = " .. vim.inspect(server_exit_tmp),
+  "local port = " .. tostring(server_exit_port),
+  "vim.opt.runtimepath:prepend(repo)",
+  "package.path = repo .. '/lua/?.lua;' .. repo .. '/lua/?/init.lua;' .. package.path",
+  "vim.cmd('runtime plugin/opencode_chat.lua')",
+  "local function assert_true(value, message) if not value then error(message or 'expected truthy') end end",
+  "local function wait_for(predicate, timeout_ms) local deadline = vim.loop.hrtime() + timeout_ms * 1000000; while vim.loop.hrtime() < deadline do if predicate() then return true end; vim.wait(50) end; return false end",
+  "vim.fn.mkdir(tmp .. '/.git', 'p')",
+  "vim.fn.mkdir(tmp .. '/src', 'p')",
+  "local file = tmp .. '/src/server-exit.lua'",
+  "vim.fn.writefile({ 'return 1' }, file)",
+  "vim.cmd('edit ' .. vim.fn.fnameescape(file))",
+  "local opencode = require('opencode_chat')",
+  "local quick = require('opencode_chat.quick')",
+  "local quick_ui = require('opencode_chat.quick_ui')",
+  "opencode.setup({ command = 'false', port = port, startup_timeout_ms = 800, response_timeout_ms = 800, agent = 'quick', model = 'deepseek/deepseek-v4-flash', providers = { deepseek = { variants = { 'low' }, models = { { id = 'deepseek-v4-flash', default_variant = 'low' } } } } })",
+  "opencode.quick('hello')",
+  "assert_true(wait_for(function() local messages = quick_ui.state().messages; local last = messages[#messages]; return quick.state().busy == false and last and last.role == 'Error' and last.text:match('exited before becoming ready') ~= nil end, 3000), 'server exit before ready should surface an error instead of staying Thinking')",
+  "opencode.quick_close()",
+}, server_exit_script)
+local server_exit_result = vim.fn.system({ "nvim", "--headless", "-u", "NONE", "-l", server_exit_script })
+local server_exit_code = vim.v.shell_error
+vim.fn.delete(server_exit_script)
+assert_eq(server_exit_code, 0, "server exit before ready should not leave quick ask thinking: " .. server_exit_result)
+
 assert_true(vim.fn.exists(":OpencodeToggle") == 2, "plugin command should be loaded")
 assert_true(vim.fn.exists(":OpencodeAppendContext") == 2, "append context command should be registered")
 assert_true(vim.fn.exists(":OpencodeContextRemove") == 2, "context remove command should be registered")
