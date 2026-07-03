@@ -92,6 +92,8 @@ require("opencode_chat").setup({
 nvim --headless -l tests/run.lua
 ```
 
+`./scripts/dev-sandbox` 是交互式开发沙盒，默认使用真实 `opencode` 后端；如需 fake backend 快速验证，可运行 `./scripts/dev-sandbox-fake`。
+
 ## 开发态启动
 
 不修改全局 Neovim 配置，直接加载当前仓库插件并启动 Neovim：
@@ -100,5 +102,5 @@ nvim --headless -l tests/run.lua
 ./scripts/dev-sandbox
 ```
 
-该命令会创建并打开 `/tmp/opencode-chat.nvim-sandbox/src/example.lua`，不会使用仓库内受 Git 管理的文件做测试目标。
+该命令会创建并打开 `/tmp/opencode-chat.nvim-sandbox/src/example.lua`，不会使用仓库内受 Git 管理的文件做测试目标；它不是自动测试，默认会调用真实 `opencode`。
 开发态脚本会显式注入推荐测试快捷键：`<M-->`、`<leader>Xe`、`<leader>Xl`、`<leader>Xn`、`<leader>Xm`、`<leader>Xt`、`<leader>Xq`、`<leader>XQ`；插件默认配置仍不注册全局快捷键。
