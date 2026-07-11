@@ -63,6 +63,10 @@ function M.message_url(session_id, opts)
   return url("/session/" .. session_id .. "/message", opts)
 end
 
+function M.prompt_async_url(session_id, opts)
+  return url("/session/" .. session_id .. "/prompt_async", opts)
+end
+
 function M.abort_url(session_id, opts)
   return url("/session/" .. session_id .. "/abort", opts)
 end
@@ -251,6 +255,26 @@ local function text_from_parts(parts)
   return table.concat(out, "\n")
 end
 
+local function message_role(message)
+  if type(message) ~= "table" then
+    return nil
+  end
+  if message.info and message.info.role then
+    return message.info.role
+  end
+  if message.message and message.message.role then
+    return message.message.role
+  end
+  return nil
+end
+
+local function message_info(message)
+  if type(message) ~= "table" then
+    return nil
+  end
+  return message.info or message.message
+end
+
 local function model_object(model)
   if type(model) == "table" then
     return {
@@ -292,6 +316,60 @@ function M.extract_message_text(message)
     return message.message.text
   end
   return ""
+end
+
+function M.message_count(messages)
+  if type(messages) ~= "table" then
+    return 0
+  end
+  return #messages
+end
+
+function M.assistant_error(message)
+  local info = message_info(message)
+  local err = info and info.error
+  if type(err) == "table" then
+    return err.message or err.name or vim.inspect(err)
+  end
+  if type(err) == "string" and err ~= "" then
+    return err
+  end
+  return nil
+end
+
+function M.assistant_completed(message)
+  local info = message_info(message)
+  if type(info) ~= "table" then
+    return true
+  end
+  if M.assistant_error(message) then
+    return true
+  end
+  if type(info.time) ~= "table" then
+    return true
+  end
+  return info.time.completed ~= nil
+end
+
+function M.extract_assistant_after(messages, baseline_count, require_completed)
+  if type(messages) ~= "table" then
+    return "", nil, nil
+  end
+  baseline_count = math.max(tonumber(baseline_count) or 0, 0)
+  for index = #messages, baseline_count + 1, -1 do
+    local message = messages[index]
+    if message_role(message) == "assistant" then
+      local err = M.assistant_error(message)
+      if err then
+        return "", message, err
+      end
+      local text = M.extract_message_text(message)
+      if text ~= "" and (not require_completed or M.assistant_completed(message)) then
+        return text, message, nil
+      end
+    end
+  end
+  return "", nil, nil
 end
 
 function M.extract_assistant_text(messages)
@@ -433,6 +511,32 @@ function M.send_message(session_id, text, opts, cb)
   end, opts.timeout_ms or config.get().response_timeout_ms)
 end
 
+local function message_payload(text, opts)
+  opts = opts or {}
+  local payload = { parts = { { type = "text", text = text } } }
+  if opts.model then
+    payload.model = model_object(opts.model)
+  end
+  if opts.agent then
+    payload.agent = opts.agent
+  end
+  if opts.variant then
+    payload.variant = opts.variant
+  elseif type(opts.model) == "table" and opts.model.variant then
+    payload.variant = opts.model.variant
+  end
+  return payload
+end
+
+function M.send_message_async(session_id, text, opts, cb)
+  opts = opts or {}
+  debug.log("client", "send_message_async", { session_id = session_id, url = M.prompt_async_url(session_id, opts), text_len = #(text or ""), text_preview = debug.preview(text), model = opts.model, agent = opts.agent })
+  return post_json(M.prompt_async_url(session_id, opts), message_payload(text, opts), function(ok, data, result)
+    debug.log("client", "send_message_async.done", { session_id = session_id, ok = ok, status = result and result.status, error = debug.preview(result and result.error) })
+    cb(ok, data, result)
+  end, opts.timeout_ms or config.get().request_timeout_ms or 10000)
+end
+
 function M.list_sessions(opts, cb)
   return get_json(M.session_url(opts), function(ok, data, result)
     if ok then
@@ -568,6 +672,103 @@ function M.wait_for_assistant(session_id, opts, cb)
       if vim.loop.hrtime() >= deadline then
         debug.log("client", "wait_for_assistant.timeout", { session_id = session_id, project = false })
         cb(false, "", data, result)
+        return
+      end
+      vim.defer_fn(poll, 200)
+    end)
+  end
+
+  poll()
+  return token
+end
+
+function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
+  opts = opts or {}
+  debug.log("client", "wait_for_assistant_after", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id, baseline_count = baseline_count })
+  local timeout_ms = opts.timeout_ms or config.get().response_timeout_ms
+  local deadline = timeout_ms and timeout_ms > 0 and (vim.loop.hrtime() + timeout_ms * 1000000) or nil
+  local token = { cancelled = false, handle = nil }
+
+  function token.cancel()
+    token.cancelled = true
+    if token.handle and token.handle.kill then
+      pcall(function()
+        token.handle:kill(15)
+      end)
+    end
+  end
+
+  local function done(found, text, data, result, err)
+    cb(found, text, data, result, err)
+  end
+
+  local function inspect_messages(ok, data)
+    if not ok then
+      return "", nil, nil
+    end
+    return M.extract_assistant_after(data, baseline_count, true)
+  end
+
+  local function poll()
+    if token.cancelled then
+      done(false, "", nil, { body = "cancelled" })
+      return
+    end
+
+    token.handle = M.get_messages(session_id, opts, function(ok, data, result)
+      local text, message, err = inspect_messages(ok, data)
+      debug.log("client", "wait_for_assistant_after.poll_done", { session_id = session_id, ok = ok, status = result and result.status, text_len = #(text or ""), completed = message and M.assistant_completed(message), error = err })
+      if token.cancelled then
+        done(false, "", nil, { body = "cancelled" })
+        return
+      end
+      if err then
+        result = result or {}
+        result.body = err
+        result.error = err
+        done(false, "", data, result, err)
+        return
+      end
+      if text ~= "" then
+        done(true, text, data, result)
+        return
+      end
+
+      if not ok and opts.project_id then
+        token.handle = M.get_project_messages(opts.project_id, session_id, opts, function(project_ok, project_data, project_result)
+          local project_text, project_message, project_err = inspect_messages(project_ok, project_data)
+          debug.log("client", "wait_for_assistant_after.project_poll_done", { session_id = session_id, project_id = opts.project_id, ok = project_ok, status = project_result and project_result.status, text_len = #(project_text or ""), completed = project_message and M.assistant_completed(project_message), error = project_err })
+          if token.cancelled then
+            done(false, "", nil, { body = "cancelled" })
+            return
+          end
+          if project_err then
+            project_result = project_result or {}
+            project_result.body = project_err
+            project_result.error = project_err
+            done(false, "", project_data, project_result, project_err)
+            return
+          end
+          if project_text ~= "" then
+            done(true, project_text, project_data, project_result)
+            return
+          end
+          if deadline and vim.loop.hrtime() >= deadline then
+            debug.log("client", "wait_for_assistant_after.timeout", { session_id = session_id, project = true })
+            done(false, "", project_data, project_result or { body = "assistant response timed out" })
+            return
+          end
+          vim.defer_fn(poll, 200)
+        end)
+        return
+      end
+
+      if deadline and vim.loop.hrtime() >= deadline then
+        debug.log("client", "wait_for_assistant_after.timeout", { session_id = session_id, project = false })
+        result = result or { body = "assistant response timed out" }
+        result.body = result.body or "assistant response timed out"
+        result.error = result.error or result.body
+        done(false, "", data, result)
         return
       end
       vim.defer_fn(poll, 200)

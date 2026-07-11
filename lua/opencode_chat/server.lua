@@ -241,6 +241,29 @@ local function merge_sessions(base, extra)
   return out
 end
 
+local function stop_active_request()
+  if active then
+    if active.cancel then
+      active.cancel()
+    elseif active.kill then
+      pcall(function()
+        active:kill(15)
+      end)
+    end
+    active = nil
+  end
+end
+
+local function sync_abort_session(session_id, port_value)
+  if not session_id or not port_value then
+    return false
+  end
+  local target = client.abort_url(session_id, { host = config.get().host, port = port_value })
+  local result = vim.fn.system({ "curl", "-sS", "-X", "POST", target, "-H", "Content-Type: application/json", "--data", "{}", "--max-time", "2", "-w", "\n%{http_code}" })
+  local status = tostring(result or ""):match("(%d%d%d)%s*$")
+  return vim.v.shell_error == 0 and status and tonumber(status) >= 200 and tonumber(status) < 300
+end
+
 local function flush_waiters(ok, err)
   local waiters = state.waiters
   state.waiters = {}
@@ -383,17 +406,18 @@ end
 
 local function send_to_session(current, text, cb, _events, set_active)
   local cfg = config.get()
-  debug.log("server", "send_to_session", { session_id = current and current.session_id, port = current and current.port, api_style = current and current.api_style, text_len = #(text or ""), text_preview = debug.preview(text) })
   if vim.in_fast_event() then
     vim.schedule(function()
-      send_to_session(current, text, cb, events, set_active)
+      send_to_session(current, text, cb, _events, set_active)
     end)
     return nil
   end
+  debug.log("server", "send_to_session", { session_id = current and current.session_id, port = current and current.port, api_style = current and current.api_style, text_len = #(text or ""), text_preview = debug.preview(text) })
   local model = config.current_model()
   local wait_handle
   local cancelled = false
   local send_handle
+  local baseline_count = 0
   local handle = {
     cancel = function()
       cancelled = true
@@ -414,7 +438,19 @@ local function send_to_session(current, text, cb, _events, set_active)
       set_active(nil)
     end
   end
-  local function send_message()
+
+  local function abort_after_timeout(done)
+    if current.api_style ~= "session" or cancelled then
+      done()
+      return
+    end
+    client.abort_session(current.session_id, { host = cfg.host, port = current.port }, function(ok, _data, result)
+      debug.log("server", "send_message.timeout_abort", { session_id = current.session_id, ok = ok, status = result and result.status, error = result and result.error })
+      done()
+    end)
+  end
+
+  local function send_sync()
     if cancelled then
       debug.log("server", "send_message.skipped_cancelled", { session_id = current.session_id })
       return
@@ -434,18 +470,68 @@ local function send_to_session(current, text, cb, _events, set_active)
         return
       end
 
-      wait_handle = client.wait_for_assistant(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, function(found, assistant_text, history, history_result)
+      wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, baseline_count, function(found, assistant_text, history, history_result)
         debug.log("server", "wait_for_assistant.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
         finish_active()
         if found then
           cb(true, assistant_text, history)
           return
         end
+        abort_after_timeout(function()
+          cb(false, nil, client.format_error(history_result, "assistant response not found"))
+        end)
+      end)
+    end)
+  end
+
+  local function poll_after_async()
+    wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, baseline_count, function(found, assistant_text, history, history_result)
+      debug.log("server", "wait_for_assistant_async.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
+      finish_active()
+      if found then
+        cb(true, assistant_text, history)
+        return
+      end
+      abort_after_timeout(function()
         cb(false, nil, client.format_error(history_result, "assistant response not found"))
       end)
     end)
   end
-  send_message()
+
+  local function send_async()
+    if current.api_style ~= "session" then
+      send_sync()
+      return
+    end
+    if cancelled then
+      debug.log("server", "send_message_async.skipped_cancelled", { session_id = current.session_id })
+      return
+    end
+    debug.log("server", "send_message_async.start", { session_id = current.session_id, baseline_count = baseline_count })
+    send_handle = client.send_message_async(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, timeout_ms = math.min(cfg.response_timeout_ms > 0 and cfg.response_timeout_ms or 10000, 10000) }, function(sent, _data, result)
+      debug.log("server", "send_message_async.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error })
+      if cancelled then
+        return
+      end
+      if sent then
+        poll_after_async()
+        return
+      end
+      if result and (result.status == 404 or result.status == 405) then
+        debug.log("server", "send_message_async.fallback_sync", { session_id = current.session_id, status = result.status })
+        send_sync()
+        return
+      end
+      finish_active()
+      cb(false, nil, client.format_error(result, "prompt failed"))
+    end)
+  end
+
+  client.get_messages(current.session_id, { host = cfg.host, port = current.port }, function(ok, data, result)
+    baseline_count = ok and client.message_count(data) or 0
+    debug.log("server", "send_message.baseline", { session_id = current.session_id, ok = ok, baseline_count = baseline_count, status = result and result.status })
+    send_async()
+  end)
   if set_active then
     set_active(handle)
   end
@@ -541,16 +627,7 @@ function M.delete_ephemeral_sync(session)
 end
 
 function M.cancel(cb)
-  if active then
-    if active.cancel then
-      active.cancel()
-    elseif active.kill then
-      pcall(function()
-        active:kill(15)
-      end)
-    end
-    active = nil
-  end
+  stop_active_request()
 
   if state.session_id and state.api_style == "session" then
     return client.abort_session(state.session_id, { host = config.get().host, port = state.port }, function(ok, _data, result)
@@ -570,7 +647,10 @@ function M.cancel(cb)
 end
 
 function M.stop()
-  M.cancel()
+  stop_active_request()
+  if state.session_id and state.api_style == "session" and state.port then
+    sync_abort_session(state.session_id, state.port)
+  end
   local stopped_job = state.job_id
   local stopped_pid = state.job_pid or job_pid(stopped_job)
   if job_running(stopped_job) then

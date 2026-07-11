@@ -23,6 +23,23 @@ def text_part(message_id, text):
     return {"id": message_id + "-part", "type": "text", "text": text}
 
 
+def user_message(message_id, text):
+    return {"info": {"id": message_id, "role": "user", "time": {"created": int(time.time() * 1000)}}, "parts": [text_part(message_id, text)]}
+
+
+def assistant_message(message_id, text, completed=True, error=None):
+    info = {"id": message_id, "role": "assistant", "time": {"created": int(time.time() * 1000)}}
+    if completed:
+        info["time"]["completed"] = int(time.time() * 1000)
+    if error:
+        info["error"] = {"message": error}
+    return {"info": info, "parts": [text_part(message_id, text)]}
+
+
+def prompt_text(data):
+    return "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/app":
@@ -136,14 +153,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._record_prompt(data)
                 self._json([])
                 return
-            text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
+            text = prompt_text(data)
             self._record_prompt(data)
             if "slow response" in text:
                 time.sleep(5)
                 if ABORTED.get(session_id):
                     self._text("aborted", 499)
                     return
-            user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
+            user = user_message(f"user-message-{len(MESSAGES.get(session_id, [])) + 1}", text)
             if "make add subtract" in text or "改成减法" in text:
                 target = os.path.join(os.getcwd(), "src", "example.lua")
                 if os.path.exists(target):
@@ -156,9 +173,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 reply_text = "fake reply: " + text
                 self._stream_reply(session_id, reply_text)
-            assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", reply_text)]}
-            MESSAGES[session_id] = [user, assistant]
+            assistant = assistant_message(f"assistant-message-{len(MESSAGES.get(session_id, [])) + 2}", reply_text)
+            MESSAGES.setdefault(session_id, []).extend([user, assistant])
             self._json(assistant)
+            return
+
+        match = re.match(r"^/session/([^/]+)/prompt_async$", self.path)
+        if match:
+            session_id = match.group(1)
+            if not data.get("model") or not data.get("agent") or not data.get("variant"):
+                self._record_prompt(data)
+                self._text("bad request", 400)
+                return
+            text = prompt_text(data)
+            self._record_prompt(data)
+            self._start_async_reply(session_id, text)
+            self._text("", 204)
             return
 
         match = re.match(r"^/session/([^/]+)/abort$", self.path)
@@ -263,6 +293,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 },
             })
             time.sleep(0.05)
+
+    def _start_async_reply(self, session_id, text):
+        def worker():
+            global MESSAGES
+            base = len(MESSAGES.get(session_id, []))
+            user = user_message(f"user-message-{base + 1}", text)
+            MESSAGES.setdefault(session_id, []).append(user)
+            if "slow response" in text:
+                time.sleep(5)
+                if ABORTED.get(session_id):
+                    MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", "", True, "aborted"))
+                    return
+            elif "partial response" in text:
+                MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", "fake reply: partial", False))
+                time.sleep(0.5)
+            elif "make add subtract" in text or "改成减法" in text:
+                target = os.path.join(os.getcwd(), "src", "example.lua")
+                if os.path.exists(target):
+                    with open(target, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    content = content.replace("return a + b", "return a - b")
+                    with open(target, "w", encoding="utf-8") as f:
+                        f.write(content)
+                MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", "已改好：src/example.lua 中 M.add(a, b) 现在返回 a - b。"))
+                return
+            reply_text = "fake reply: " + text
+            self._stream_reply(session_id, reply_text)
+            current = MESSAGES.setdefault(session_id, [])
+            if current and current[-1].get("info", {}).get("role") == "assistant" and not current[-1].get("info", {}).get("time", {}).get("completed"):
+                current[-1] = assistant_message(current[-1]["info"]["id"], reply_text)
+            else:
+                current.append(assistant_message(f"assistant-message-{base + 2}", reply_text))
+
+        threading.Thread(target=worker, daemon=True).start()
 
 
 def main():

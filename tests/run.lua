@@ -290,6 +290,7 @@ vim.api.nvim_set_current_win(code_win)
 assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should prefer current API")
 assert_eq(client.api_sessions_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session list fallback URL should target v2 API")
 assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")
+assert_eq(client.prompt_async_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/prompt_async", "async prompt URL should target current API")
 assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
 assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc", "rename URL should target session update API")
@@ -497,6 +498,13 @@ assert_eq(payload.model.providerID, "deepseek", "switched payload model should i
 assert_eq(payload.model.modelID, "deepseek-v4-pro", "switched payload should use selected model")
 assert_eq(payload.variant, "max", "switched payload should use selected variant")
 
+opencode.ask("partial response")
+assert_true(wait_for(function()
+  local messages = ui.state().messages
+  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("partial response") ~= nil
+end, 3000), "async polling should wait for the completed assistant response instead of returning an in-progress partial")
+assert_true(ui.state().messages[#ui.state().messages].text:match("fake reply: partial$") == nil, "async polling should not render the unfinished partial assistant text")
+
 opencode.ask("slow response")
 assert_true(wait_for(function()
   return opencode._request.busy == true
@@ -600,7 +608,7 @@ picker.close()
 opencode.select_session("test-session-1")
 assert_true(wait_for(function()
   local messages = ui.state().messages
-  return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("model switch") ~= nil
+  return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("partial response") ~= nil
 end, 3000), "select_session should switch back and render history")
 
 local main_session_before_quick = server.state().session_id
