@@ -345,3 +345,10 @@
 - 方案：记录动态端口、job id、OS pid、stdout/stderr tail 和 exit code；`server.stop()` 等待 job 退出，必要时 TERM/KILL；`VimLeavePre` 兜底调用 stop。
 - 预防：测试必须覆盖 server 早退时错误包含 stderr/exit code，并断言 `opencode.stop()` 会等待 fake server job 退出。
 - commitID：45d51d6
+
+## 2026-07-11：慢模型不能被同步 message 请求超时截断
+
+- 问题：`POST /session/:id/message` 是等待完整回复的同步接口，慢模型 30 秒内无响应会被 `curl --max-time` 判失败，取消/退出还可能与停 server 竞态导致连接重置。
+- 方案：优先使用 `POST /session/:id/prompt_async` 异步提交，再按发送前 history baseline 轮询新 assistant，并等待 `time.completed` 或错误；超时/取消走真实 `/abort`，`stop()` 用同步 best-effort abort 后再停服务。
+- 预防：测试必须模拟异步慢回复、未完成 partial assistant、多轮 history 和取消路径，避免再次把同步 HTTP 超时当作模型生成边界。
+- commitID：04244f3
