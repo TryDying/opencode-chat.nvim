@@ -367,3 +367,14 @@
 - 预防：任何依赖外部服务分页语义的改动，必须先阅读服务端源码确认语义（不能仅凭参数名猜测）。长期方案采用 SSE 流式推送替代轮询，避免 JSON 膨胀问题。
 - commitID：2c48101
 
+## 2026-08-10：SSE 流式推送替代轮询
+
+- 问题：GET /message 轮询拉取全部消息历史导致 JSON 膨胀，`limit` 因 opencode 分页语义（`ORDER BY DESC → reverse → pop` 导致初页不含最新消息）无法用于轮询。
+- 方案：
+  1. 新增 `lua/opencode_chat/sse.lua`：`vim.loop` TCP 直连 `GET /event`，按 `\n\n` 边界切 SSE 帧，兼容 opencode 真实格式（`properties.delta`）和 fixture 格式（`properties.part.text`），`session.idle`/`session.status`/`message.updated` 三重完成检测，30s 心跳 watchdog + 指数退避重连。
+  2. **先 send_message_async 再 subscribe SSE**——消除旧 SSE 实现（commitID f98ede5）中先订阅后发送的时序竞态。
+  3. `server.lua send_to_session` 移除 polling 和 baseline_count 预取，`send_async` 成功后直接 `subscribe_sse`；`send_sync` 保留用于 legacy fallback。
+  4. fixture：SSE 路径改为 `/event`（+`?directory=`）、所有完成路径广播 `session.idle`、编辑/partial 路径加 0.1s 延迟防 SSE 订阅/广播竞态。
+- 预防：后续任何流式实现必须确保"先发后订"时序；fixture 的 SSE 完成信号需覆盖 `session.idle`，不能仅依赖消息数组变更。
+- commitID：9aa037f
+
