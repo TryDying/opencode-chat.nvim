@@ -107,6 +107,14 @@ function M.project_sessions_url(project_id, opts)
   return url("/project/" .. path_segment(project_id) .. "/session", opts)
 end
 
+function M.event_url(opts)
+  local target = "/event"
+  if opts and opts.directory and opts.directory ~= "" then
+    target = target .. "?directory=" .. query_value(opts.directory)
+  end
+  return url(target, opts)
+end
+
 function M.run(args, cb)
   debug.log("client", "run", { cmd = args and args[1], args = log_args(args) })
   if vim.system then

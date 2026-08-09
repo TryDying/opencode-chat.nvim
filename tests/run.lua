@@ -336,7 +336,7 @@ assert_true(wait_for(function()
   return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session-1"
 end, 5000), "submit should create session and send prompt to fake headless server")
 assert_true(type(server.state().job_pid) == "number" and server.state().job_pid > 0, "server state should record the OS process id")
-assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-events.jsonl") == 0, "message sending should not open SSE event subscriptions")
+assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-events.jsonl") == 1, "message sending should open SSE event subscriptions")
 
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
 assert_eq(session_payload.agent, "quick", "session create should include configured opencode agent")

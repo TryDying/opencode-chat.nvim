@@ -49,7 +49,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/doc":
             self._json({"openapi": "3.1.0"})
             return
-        if self.path == "/event/subscribe":
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/event":
+            qs = urllib.parse.parse_qs(parsed.query)
+            req_dir = qs.get("directory", [None])[0]
+            if req_dir:
+                expected = os.getcwd()
+                if req_dir != expected:
+                    debug_log = os.path.join(os.getcwd(), ".opencode-chat-directory-mismatch.txt")
+                    with open(debug_log, "w", encoding="utf-8") as f:
+                        f.write("requested=%s\nexpected=%s\n" % (req_dir, expected))
             self._events()
             return
         if self.path == "/project":
@@ -315,6 +324,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 },
             })
             time.sleep(0.05)
+        self._broadcast({
+            "id": "session-idle",
+            "type": "session.idle",
+            "properties": {"sessionID": session_id},
+        })
 
     def _start_async_reply(self, session_id, text):
         def worker():
@@ -328,8 +342,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", "", True, "aborted"))
                     return
             elif "partial response" in text:
-                MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", "fake reply: partial", False))
                 time.sleep(0.5)
+                reply_text = "fake reply: " + text
+                self._stream_reply(session_id, reply_text)
+                current = MESSAGES.setdefault(session_id, [])
+                if current and current[-1].get("info", {}).get("role") == "assistant" and not current[-1].get("info", {}).get("time", {}).get("completed"):
+                    current[-1] = assistant_message(current[-1]["info"]["id"], reply_text)
+                else:
+                    current.append(assistant_message(f"assistant-message-{base + 2}", reply_text))
+                return
             elif "make add subtract" in text or "改成减法" in text:
                 target = os.path.join(os.getcwd(), "src", "example.lua")
                 if os.path.exists(target):
@@ -338,9 +359,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     content = content.replace("return a + b", "return a - b")
                     with open(target, "w", encoding="utf-8") as f:
                         f.write(content)
-                MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", "已改好：src/example.lua 中 M.add(a, b) 现在返回 a - b。"))
+                edit_text = "已改好：src/example.lua 中 M.add(a, b) 现在返回 a - b。"
+                time.sleep(0.1)  # give SSE subscriber time to connect
+                self._stream_reply(session_id, edit_text)
+                MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", edit_text))
                 return
             reply_text = "fake reply: " + text
+            time.sleep(0.1)  # give SSE subscriber time to connect before streaming
             self._stream_reply(session_id, reply_text)
             current = MESSAGES.setdefault(session_id, [])
             if current and current[-1].get("info", {}).get("role") == "assistant" and not current[-1].get("info", {}).get("time", {}).get("completed"):

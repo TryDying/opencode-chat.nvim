@@ -2,6 +2,7 @@ local config = require("opencode_chat.config")
 local port = require("opencode_chat.port")
 local root = require("opencode_chat.root")
 local client = require("opencode_chat.client")
+local sse = require("opencode_chat.sse")
 local debug = require("opencode_chat.debug")
 
 local M = {}
@@ -414,10 +415,9 @@ local function send_to_session(current, text, cb, _events, set_active)
   end
   debug.log("server", "send_to_session", { session_id = current and current.session_id, port = current and current.port, api_style = current and current.api_style, text_len = #(text or ""), text_preview = debug.preview(text) })
   local model = config.current_model()
-  local wait_handle
   local cancelled = false
   local send_handle
-  local baseline_count = 0
+  local sse_handle
   local handle = {
     cancel = function()
       cancelled = true
@@ -428,8 +428,8 @@ local function send_to_session(current, text, cb, _events, set_active)
       elseif send_handle and send_handle.cancel then
         send_handle.cancel()
       end
-      if wait_handle and wait_handle.cancel then
-        wait_handle.cancel()
+      if sse_handle and sse_handle.cancel then
+        sse_handle.cancel()
       end
     end
   }
@@ -437,17 +437,6 @@ local function send_to_session(current, text, cb, _events, set_active)
     if set_active then
       set_active(nil)
     end
-  end
-
-  local function abort_after_timeout(done)
-    if current.api_style ~= "session" or cancelled then
-      done()
-      return
-    end
-    client.abort_session(current.session_id, { host = cfg.host, port = current.port }, function(ok, _data, result)
-      debug.log("server", "send_message.timeout_abort", { session_id = current.session_id, ok = ok, status = result and result.status, error = result and result.error })
-      done()
-    end)
   end
 
   local function send_sync()
@@ -470,32 +459,47 @@ local function send_to_session(current, text, cb, _events, set_active)
         return
       end
 
-      wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, baseline_count, function(found, assistant_text, history, history_result)
-        debug.log("server", "wait_for_assistant.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
-        finish_active()
-        if found then
-          cb(true, assistant_text, history)
-          return
-        end
-        abort_after_timeout(function()
-          cb(false, nil, client.format_error(history_result, "assistant response not found"))
-        end)
-      end)
+      subscribe_sse()
     end)
   end
 
-  local function poll_after_async()
-    wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, baseline_count, function(found, assistant_text, history, history_result)
-      debug.log("server", "wait_for_assistant_async.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
-      finish_active()
-      if found then
-        cb(true, assistant_text, history)
-        return
-      end
-      abort_after_timeout(function()
-        cb(false, nil, client.format_error(history_result, "assistant response not found"))
-      end)
-    end)
+  local function subscribe_sse()
+    if cancelled then
+      return
+    end
+    local accumulated = {}
+    local function append_chunk(chunk)
+      table.insert(accumulated, chunk)
+    end
+
+    debug.log("server", "sse.subscribe", { session_id = current.session_id, directory = current.root })
+    sse_handle = sse.subscribe({
+      host = cfg.host,
+      port = current.port,
+      directory = current.root,
+      session_id = current.session_id,
+    }, {
+      on_delta = function(chunk)
+        append_chunk(chunk)
+      end,
+      on_completed = function()
+        finish_active()
+        if cancelled then
+          return
+        end
+        local full_text = table.concat(accumulated, "")
+        debug.log("server", "sse.completed", { session_id = current.session_id, text_len = #full_text })
+        cb(true, full_text, accumulated)
+      end,
+      on_error = function(err)
+        finish_active()
+        if cancelled then
+          return
+        end
+        debug.log("server", "sse.error", { session_id = current.session_id, error = err })
+        cb(false, nil, err or "SSE connection failed")
+      end,
+    })
   end
 
   local function send_async()
@@ -507,14 +511,14 @@ local function send_to_session(current, text, cb, _events, set_active)
       debug.log("server", "send_message_async.skipped_cancelled", { session_id = current.session_id })
       return
     end
-    debug.log("server", "send_message_async.start", { session_id = current.session_id, baseline_count = baseline_count })
+    debug.log("server", "send_message_async.start", { session_id = current.session_id })
     send_handle = client.send_message_async(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, timeout_ms = math.min(cfg.response_timeout_ms > 0 and cfg.response_timeout_ms or 10000, 10000) }, function(sent, _data, result)
       debug.log("server", "send_message_async.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error })
       if cancelled then
         return
       end
       if sent then
-        poll_after_async()
+        subscribe_sse()
         return
       end
       if result and (result.status == 404 or result.status == 405) then
@@ -527,11 +531,7 @@ local function send_to_session(current, text, cb, _events, set_active)
     end)
   end
 
-  client.get_messages(current.session_id, { host = cfg.host, port = current.port }, function(ok, data, result)
-    baseline_count = ok and client.message_count(data) or 0
-    debug.log("server", "send_message.baseline", { session_id = current.session_id, ok = ok, baseline_count = baseline_count, status = result and result.status })
-    send_async()
-  end)
+  send_async()
   if set_active then
     set_active(handle)
   end
