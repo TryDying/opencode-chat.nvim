@@ -9,6 +9,7 @@ import signal
 import sys
 import threading
 import time
+import urllib.parse
 
 
 SESSION_COUNTER = 0
@@ -82,13 +83,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/project/test-project/session":
             self._json({"data": {"sessions": SESSIONS + [foreign, subagent]}})
             return
-        match = re.match(r"^/session/([^/]+)/message$", self.path)
+        parsed = urllib.parse.urlparse(self.path)
+        match = re.match(r"^/session/([^/]+)/message$", parsed.path)
         if match:
-            self._json(MESSAGES.get(match.group(1), []))
+            messages = MESSAGES.get(match.group(1), [])
+            qs = urllib.parse.parse_qs(parsed.query)
+            limit_str = qs.get("limit", [None])[0]
+            if limit_str:
+                try:
+                    limit = int(limit_str)
+                    if limit > 0:
+                        messages = messages[-limit:]
+                except ValueError:
+                    pass
+            self._json(messages)
             return
-        match = re.match(r"^/project/test-project/session/([^/]+)/message$", self.path)
+        match = re.match(r"^/project/test-project/session/([^/]+)/message$", parsed.path)
         if match:
-            self._json(MESSAGES.get(match.group(1), []))
+            messages = MESSAGES.get(match.group(1), [])
+            qs = urllib.parse.parse_qs(parsed.query)
+            limit_str = qs.get("limit", [None])[0]
+            if limit_str:
+                try:
+                    limit = int(limit_str)
+                    if limit > 0:
+                        messages = messages[-limit:]
+                except ValueError:
+                    pass
+            self._json(messages)
             return
         self._text("not found", 404)
 

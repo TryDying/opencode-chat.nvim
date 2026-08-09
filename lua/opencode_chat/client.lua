@@ -60,7 +60,11 @@ function M.api_sessions_url(opts)
 end
 
 function M.message_url(session_id, opts)
-  return url("/session/" .. session_id .. "/message", opts)
+  local target = "/session/" .. session_id .. "/message"
+  if opts and opts.limit and tonumber(opts.limit) and tonumber(opts.limit) > 0 then
+    target = target .. "?limit=" .. tostring(tonumber(opts.limit))
+  end
+  return url(target, opts)
 end
 
 function M.prompt_async_url(session_id, opts)
@@ -100,7 +104,11 @@ function M.current_project_url(opts)
 end
 
 function M.project_messages_url(project_id, session_id, opts)
-  return url("/project/" .. path_segment(project_id) .. "/session/" .. path_segment(session_id) .. "/message", opts)
+  local target = "/project/" .. path_segment(project_id) .. "/session/" .. path_segment(session_id) .. "/message"
+  if opts and opts.limit and tonumber(opts.limit) and tonumber(opts.limit) > 0 then
+    target = target .. "?limit=" .. tostring(tonumber(opts.limit))
+  end
+  return url(target, opts)
 end
 
 function M.project_sessions_url(project_id, opts)
@@ -129,13 +137,15 @@ end
 
 local function decode_json(text)
   if not text or text == "" then
-    return nil
+    return nil, "empty body"
   end
   local ok, decoded = pcall(vim.json.decode, text)
   if ok then
     return decoded
   end
-  return nil
+  local err_msg = tostring(decoded or "unknown json error")
+  debug.log("client", "json.decode_error", { body_len = #text, error = err_msg, preview = debug.preview(text) })
+  return nil, err_msg
 end
 
 local function split_body_status(stdout)
@@ -169,10 +179,21 @@ local function finish(result, cb)
   result.body = body
   result.status = status
   local stderr = result.stderr and result.stderr ~= "" and result.stderr or nil
-  result.error = stderr or body or result.stdout or ""
-  local ok = result.code == 0 and status and status >= 200 and status < 300
+  local curl_ok = result.code == 0 and status and status >= 200 and status < 300
+  local data, json_err = decode_json(body)
+  local ok = curl_ok
+  if curl_ok and not data then
+    if body == "" or status == 204 or status == 202 then
+      ok = true
+    else
+      ok = false
+      result.error = json_err and ("JSON parse error: " .. json_err) or stderr or "empty or unparseable response"
+    end
+  elseif not curl_ok then
+    result.error = stderr or body or result.stdout or ""
+  end
   debug.log("client", "http.done", { ok = ok, status = status, code = result.code, body_len = #(body or ""), error = debug.preview(result.error) })
-  cb(ok, decode_json(body), result)
+  cb(ok, data, result)
 end
 
 function M.format_error(result, fallback)
@@ -683,8 +704,8 @@ function M.wait_for_assistant(session_id, opts, cb)
 end
 
 function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
-  opts = opts or {}
-  debug.log("client", "wait_for_assistant_after", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id, baseline_count = baseline_count })
+  opts = vim.tbl_extend("force", opts or {}, { limit = opts and opts.limit or 1 })
+  debug.log("client", "wait_for_assistant_after", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id, limit = opts.limit })
   local timeout_ms = opts.timeout_ms or config.get().response_timeout_ms
   local deadline = timeout_ms and timeout_ms > 0 and (vim.loop.hrtime() + timeout_ms * 1000000) or nil
   local token = { cancelled = false, handle = nil }
@@ -704,9 +725,12 @@ function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
 
   local function inspect_messages(ok, data)
     if not ok then
-      return "", nil, nil
+      return "", nil, "request failed"
     end
-    return M.extract_assistant_after(data, baseline_count, true)
+    if data == nil then
+      return "", nil, "empty or unparseable response from server"
+    end
+    return M.extract_assistant_after(data, 0, true)
   end
 
   local function poll()

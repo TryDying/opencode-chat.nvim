@@ -417,7 +417,6 @@ local function send_to_session(current, text, cb, _events, set_active)
   local wait_handle
   local cancelled = false
   local send_handle
-  local baseline_count = 0
   local handle = {
     cancel = function()
       cancelled = true
@@ -470,7 +469,7 @@ local function send_to_session(current, text, cb, _events, set_active)
         return
       end
 
-      wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, baseline_count, function(found, assistant_text, history, history_result)
+      wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, 0, function(found, assistant_text, history, history_result)
         debug.log("server", "wait_for_assistant.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
         finish_active()
         if found then
@@ -485,7 +484,7 @@ local function send_to_session(current, text, cb, _events, set_active)
   end
 
   local function poll_after_async()
-    wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, baseline_count, function(found, assistant_text, history, history_result)
+    wait_handle = client.wait_for_assistant_after(current.session_id, { host = cfg.host, port = current.port, project_id = current.project_id, timeout_ms = cfg.response_timeout_ms }, 0, function(found, assistant_text, history, history_result)
       debug.log("server", "wait_for_assistant_async.done", { session_id = current.session_id, found = found, text_len = #(assistant_text or ""), status = history_result and history_result.status, error = history_result and history_result.error })
       finish_active()
       if found then
@@ -507,7 +506,7 @@ local function send_to_session(current, text, cb, _events, set_active)
       debug.log("server", "send_message_async.skipped_cancelled", { session_id = current.session_id })
       return
     end
-    debug.log("server", "send_message_async.start", { session_id = current.session_id, baseline_count = baseline_count })
+    debug.log("server", "send_message_async.start", { session_id = current.session_id })
     send_handle = client.send_message_async(current.session_id, text, { host = cfg.host, port = current.port, model = model, agent = cfg.agent, timeout_ms = math.min(cfg.response_timeout_ms > 0 and cfg.response_timeout_ms or 10000, 10000) }, function(sent, _data, result)
       debug.log("server", "send_message_async.done", { session_id = current.session_id, sent = sent, status = result and result.status, code = result and result.code, error = result and result.error })
       if cancelled then
@@ -527,11 +526,7 @@ local function send_to_session(current, text, cb, _events, set_active)
     end)
   end
 
-  client.get_messages(current.session_id, { host = cfg.host, port = current.port }, function(ok, data, result)
-    baseline_count = ok and client.message_count(data) or 0
-    debug.log("server", "send_message.baseline", { session_id = current.session_id, ok = ok, baseline_count = baseline_count, status = result and result.status })
-    send_async()
-  end)
+  send_async()
   if set_active then
     set_active(handle)
   end
