@@ -60,11 +60,7 @@ function M.api_sessions_url(opts)
 end
 
 function M.message_url(session_id, opts)
-  local target = "/session/" .. session_id .. "/message"
-  if opts and opts.limit and tonumber(opts.limit) and tonumber(opts.limit) > 0 then
-    target = target .. "?limit=" .. tostring(tonumber(opts.limit))
-  end
-  return url(target, opts)
+  return url("/session/" .. session_id .. "/message", opts)
 end
 
 function M.prompt_async_url(session_id, opts)
@@ -104,11 +100,7 @@ function M.current_project_url(opts)
 end
 
 function M.project_messages_url(project_id, session_id, opts)
-  local target = "/project/" .. path_segment(project_id) .. "/session/" .. path_segment(session_id) .. "/message"
-  if opts and opts.limit and tonumber(opts.limit) and tonumber(opts.limit) > 0 then
-    target = target .. "?limit=" .. tostring(tonumber(opts.limit))
-  end
-  return url(target, opts)
+  return url("/project/" .. path_segment(project_id) .. "/session/" .. path_segment(session_id) .. "/message", opts)
 end
 
 function M.project_sessions_url(project_id, opts)
@@ -704,8 +696,8 @@ function M.wait_for_assistant(session_id, opts, cb)
 end
 
 function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
-  opts = vim.tbl_extend("force", opts or {}, { limit = opts and opts.limit or 1 })
-  debug.log("client", "wait_for_assistant_after", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id, limit = opts.limit })
+  opts = opts or {}
+  debug.log("client", "wait_for_assistant_after", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id, baseline_count = baseline_count })
   local timeout_ms = opts.timeout_ms or config.get().response_timeout_ms
   local deadline = timeout_ms and timeout_ms > 0 and (vim.loop.hrtime() + timeout_ms * 1000000) or nil
   local token = { cancelled = false, handle = nil }
@@ -730,7 +722,7 @@ function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
     if data == nil then
       return "", nil, "empty or unparseable response from server"
     end
-    return M.extract_assistant_after(data, 0, true)
+    return M.extract_assistant_after(data, baseline_count, true)
   end
 
   local function poll()
@@ -779,7 +771,10 @@ function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
           end
           if deadline and vim.loop.hrtime() >= deadline then
             debug.log("client", "wait_for_assistant_after.timeout", { session_id = session_id, project = true })
-            done(false, "", project_data, project_result or { body = "assistant response timed out" })
+            project_result = project_result or {}
+            project_result.body = "assistant response timed out"
+            project_result.error = project_result.body
+            done(false, "", project_data, project_result)
             return
           end
           vim.defer_fn(poll, 200)
@@ -789,9 +784,9 @@ function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
 
       if deadline and vim.loop.hrtime() >= deadline then
         debug.log("client", "wait_for_assistant_after.timeout", { session_id = session_id, project = false })
-        result = result or { body = "assistant response timed out" }
-        result.body = result.body or "assistant response timed out"
-        result.error = result.error or result.body
+        result = result or {}
+        result.body = "assistant response timed out"
+        result.error = result.body
         done(false, "", data, result)
         return
       end
