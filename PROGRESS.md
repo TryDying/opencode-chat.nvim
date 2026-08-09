@@ -352,3 +352,15 @@
 - 方案：优先使用 `POST /session/:id/prompt_async` 异步提交，再按发送前 history baseline 轮询新 assistant，并等待 `time.completed` 或错误；超时/取消走真实 `/abort`，`stop()` 用同步 best-effort abort 后再停服务。
 - 预防：测试必须模拟异步慢回复、未完成 partial assistant、多轮 history 和取消路径，避免再次把同步 HTTP 超时当作模型生成边界。
 - commitID：04244f3
+
+## 2026-08-10：长回复导致假性 timeout 错误
+
+- 问题：回复过长时 UI 显示 Error（session 仍然存活），但真实错误不是 timeout。根本原因是轮询使用 `GET /session/:id/message` 不带 `limit` 参数，每次拉取全部消息历史，JSON 随回复增长最终超出 `vim.json.decode` 或 `vim.system` 的承载极限。`pcall` 静默吞错后轮询空转，直到 deadline 超时抛出误导性的 "assistant response timed out"。
+- 方案：
+  1. **轮询时使用 `limit=1`**：仅获取最新 1 条消息而非全部历史，消除 JSON 膨胀根因。opencode serve 原生支持 `?limit=N` 分页参数（`GET /session/:id/message?limit=1` 返回最新 N 条），此前插件完全未使用。
+  2. **去掉 `baseline_count` 依赖**：`wait_for_assistant_after` 从"按 baseline 扫描全量消息"简化为"检查最新消息是否为 assistant + completed"，不再需要轮询前预取 baseline count。
+  3. **修正 `finish()` 的空 body 处理**：`prompt_async` 返回 204 空 body 是合法的异步接受信号，之前被误判为 JSON 解析失败。修复后 204/202 空 body 视为成功。
+  4. **`decode_json` 失败不再静默**：`pcall` 第二个返回值记录到 `debug.log`。
+- 预防：今后所有涉及 `GET /message` 的轮询路径，必须使用 `limit` 参数防止 JSON 膨胀；对空 body HTTP 响应的处理需区分"无 body 即成功"(204/202)和"无 body 即异常"(200 应有 JSON)。
+- commitID：ccaaf29
+
