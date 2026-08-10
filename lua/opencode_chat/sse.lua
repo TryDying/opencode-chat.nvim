@@ -2,25 +2,14 @@ local debug = require("opencode_chat.debug")
 
 local M = {}
 
---- SSE 帧格式兼容双来源：
----   1. 真实 opencode: { type="message.part.delta", properties={ sessionID, delta } }
----   2. test fixture:   { type="message.part.delta", properties={ sessionID, part={ text } } }
+--- 从当前 OpenCode API 格式提取 delta 文本：properties.delta
 local function extract_delta_text(properties)
   if type(properties) ~= "table" then
     return ""
   end
-
-  -- opencode stable v1: { delta }
   if type(properties.delta) == "string" and properties.delta ~= "" then
     return properties.delta
   end
-
-  -- test fixture: { part: { text } }
-  local part = properties.part
-  if type(part) == "table" and type(part.text) == "string" and part.text ~= "" then
-    return part.text
-  end
-
   return ""
 end
 
@@ -36,40 +25,28 @@ local function match_session(event, session_id)
   return props.sessionID == session_id
 end
 
---- 检查事件是否为完成信号
+--- 检查事件是否为完成信号。
+--- session.status {type:"idle"} 优先，session.idle (deprecated) 作为 fallback。
 local function is_completion_event(event, session_id)
   if not match_session(event, session_id) then
     return false
   end
   local typ = event.type
-  if typ == "session.idle" then
-    return true
-  end
   if typ == "session.status" then
-    local status = event.properties
-    if type(status) == "table" and status.status then
-      status = status.status
-    end
+    local props = event.properties or {}
+    local status = props.status
     if type(status) == "table" and status.type == "idle" then
       return true
     end
   end
-  if typ == "message.updated" then
-    local info = event.properties
-    if type(info) == "table" and info.info then
-      info = info.info
-    end
-    local t = type(info) == "table" and info.time
-    if type(t) == "table" and t.completed ~= nil then
-      return true
-    end
+  if typ == "session.idle" then
+    return true
   end
   return false
 end
 
 --- 从 buffer 中提取完整的 SSE 帧。
 --- 返回: { frames = {frame1, ...}, consumed = 已消费字节数 }
---- frame 结构: { data = "json_str" }  — 提取自 "data: <json>" 行
 local function extract_frames(buffer)
   local frames = {}
   local pos = 1
@@ -84,7 +61,6 @@ local function extract_frames(buffer)
     local frame_text = buffer:sub(pos, start_pos - 1)
     pos = end_pos + 1
 
-    -- 提取 data: 行（忽略 event: / id: 等行）
     for line in frame_text:gmatch("[^\r\n]+") do
       local data_match = line:match("^data:%s?(.+)$")
       if data_match then
@@ -99,19 +75,27 @@ end
 
 --- 启动 SSE 订阅
 --- @param opts  { host, port, directory, session_id }
---- @param callbacks  { on_delta(text_chunk), on_completed(), on_error(err_msg) }
+--- @param callbacks  {
+---   on_connected = function(),       -- SSE 连接就绪（收到 server.connected）
+---   on_delta = function(text_chunk), -- message.part.delta / session.next.text.delta
+---   on_reasoning = function(text),   -- session.next.reasoning.delta (可选)
+---   on_tool = function(typ, props),  -- session.next.tool.* (可选)
+---   on_error = function(err_msg),    -- SSE session.error 或连接错误 (可选)
+---   on_event = function(typ, props), -- 透传所有未分类事件 (可选)
+---   on_completed = function(),       -- 请求完成
+--- }
 --- @return handle  { cancel() }
 function M.subscribe(opts, callbacks)
   local uv = vim.uv or vim.loop
   local tcp = assert(uv.new_tcp(), "failed to create tcp socket")
   local buffer = ""
   local cancelled = false
+  local connected = false
   local backoff_seconds = 1
   local max_retries = 3
   local retry_count = 0
-  local heartbeat_timer  -- 心跳 watchdog
+  local heartbeat_timer
 
-  -- 前向声明
   local reset_heartbeat
   local retry
   local connect
@@ -134,7 +118,11 @@ function M.subscribe(opts, callbacks)
     cancelled = true
     close()
     vim.schedule(function()
-      callbacks.on_error(err_msg)
+      if callbacks.on_error then
+        callbacks.on_error(err_msg)
+      else
+        callbacks.on_completed()
+      end
     end)
   end
 
@@ -161,7 +149,7 @@ function M.subscribe(opts, callbacks)
     end)
   end
 
-  --- 处理一条 JSON 事件
+  --- 处理一条 JSON 事件：路由到对应回调
   local function process_event(json_str)
     local ok, event = pcall(vim.json.decode, json_str)
     if not ok or type(event) ~= "table" then
@@ -169,19 +157,33 @@ function M.subscribe(opts, callbacks)
     end
 
     local typ = event.type
+    local props = event.properties or {}
 
-    -- 心跳/connected：重置 watchdog
-    if typ == "server.heartbeat" or typ == "server.connected" then
+    -- 连接管理
+    if typ == "server.connected" then
+      if not connected then
+        connected = true
+        vim.schedule(function()
+          if callbacks.on_connected then
+            callbacks.on_connected()
+          end
+        end)
+      end
       reset_heartbeat()
       return
     end
 
-    -- 检查是否属于目标 session
+    if typ == "server.heartbeat" then
+      reset_heartbeat()
+      return
+    end
+
+    -- 检查是否属于目标 session（完成信号和 session-level 事件需要 session 匹配）
     if not match_session(event, opts.session_id) then
       return
     end
 
-    -- 完成信号？
+    -- 完成信号
     if is_completion_event(event, opts.session_id) then
       debug.log("sse", "completed", {
         session_id = opts.session_id,
@@ -191,17 +193,65 @@ function M.subscribe(opts, callbacks)
       return
     end
 
-    -- 增量文本
+    -- 增量文本：v1 compat message.part.delta
     if typ == "message.part.delta" then
-      local text = extract_delta_text(event.properties)
+      local text = extract_delta_text(props)
       if text ~= "" then
         emit_delta(text)
       end
       return
     end
+
+    -- 增量文本：新引擎 session.next.text.delta
+    if typ == "session.next.text.delta" then
+      local text = extract_delta_text(props)
+      if text ~= "" then
+        emit_delta(text)
+      end
+      return
+    end
+
+    -- 推理 delta
+    if typ == "session.next.reasoning.delta" then
+      local text = extract_delta_text(props)
+      if text ~= "" and callbacks.on_reasoning then
+        vim.schedule(function()
+          callbacks.on_reasoning(text)
+        end)
+      end
+      return
+    end
+
+    -- 工具事件
+    if typ:match("^session%.next%.tool%.") then
+      if callbacks.on_tool then
+        vim.schedule(function()
+          callbacks.on_tool(typ, props)
+        end)
+      end
+      return
+    end
+
+    -- Session 级错误
+    if typ == "session.error" then
+      if callbacks.on_error then
+        local err = props.error or {}
+        local msg = err.message or err.name or vim.inspect(err)
+        vim.schedule(function()
+          callbacks.on_error(msg)
+        end)
+      end
+      return
+    end
+
+    -- 透传其余事件
+    if callbacks.on_event then
+      vim.schedule(function()
+        callbacks.on_event(typ, props)
+      end)
+    end
   end
 
-  --- 处理收到的原始字节流
   local function on_data(read_err, chunk)
     if cancelled then
       return
@@ -212,7 +262,6 @@ function M.subscribe(opts, callbacks)
       return
     end
     if not chunk then
-      -- EOF — 服务器关闭了连接
       debug.log("sse", "eof", { session_id = opts.session_id })
       retry()
       return
@@ -231,7 +280,6 @@ function M.subscribe(opts, callbacks)
     end
   end
 
-  --- 重置心跳计时器
   function reset_heartbeat()
     if heartbeat_timer then
       heartbeat_timer:start(30000, 0, function()
@@ -242,7 +290,6 @@ function M.subscribe(opts, callbacks)
     end
   end
 
-  --- 重连（指数退避）
   function retry()
     if cancelled then
       return
@@ -272,7 +319,6 @@ function M.subscribe(opts, callbacks)
     end, delay)
   end
 
-  --- 建立 TCP 连接并发送 HTTP 请求
   function connect()
     if cancelled then
       return
@@ -290,7 +336,6 @@ function M.subscribe(opts, callbacks)
       directory = directory,
     })
 
-    -- 创建新 socket（旧 socket 已在 retry/close 时关闭）
     if tcp:is_closing() then
       tcp = assert(uv.new_tcp(), "failed to create tcp socket")
     end
@@ -317,7 +362,6 @@ function M.subscribe(opts, callbacks)
       )
       tcp:write(request)
 
-      -- 启动心跳 watchdog
       if heartbeat_timer then
         heartbeat_timer:stop()
         heartbeat_timer:close()
@@ -325,7 +369,6 @@ function M.subscribe(opts, callbacks)
       heartbeat_timer = uv.new_timer()
       reset_heartbeat()
 
-      -- 开始读取
       tcp:read_start(function(read_err, chunk)
         on_data(read_err, chunk)
       end)

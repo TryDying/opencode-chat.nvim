@@ -70,9 +70,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/project/current":
             self._json({"id": "test-project", "worktree": os.getcwd()})
             return
-        if self.path == "/session":
-            self._text("not found", 404)
-            return
         foreign = {
             "id": "foreign-session",
             "title": "Other workspace session",
@@ -86,28 +83,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "directory": os.getcwd(),
             "parentSessionID": "test-session-1",
         }
-        if self.path == "/api/session":
-            self._json({"data": {"items": SESSIONS + [foreign, subagent]}})
+        if parsed.path == "/session":
+            qs = urllib.parse.parse_qs(parsed.query)
+            scope = qs.get("scope", [None])[0]
+            path_filter = qs.get("path", [None])[0]
+            if scope == "project" and path_filter:
+                # Return sessions matching the project scope
+                self._json(SESSIONS + [foreign, subagent])
+            else:
+                self._json(SESSIONS + [foreign, subagent])
             return
-        if self.path == "/project/test-project/session":
+        if parsed.path == "/api/session":
             self._json({"data": {"sessions": SESSIONS + [foreign, subagent]}})
             return
-        parsed = urllib.parse.urlparse(self.path)
         match = re.match(r"^/session/([^/]+)/message$", parsed.path)
-        if match:
-            messages = MESSAGES.get(match.group(1), [])
-            qs = urllib.parse.parse_qs(parsed.query)
-            limit_str = qs.get("limit", [None])[0]
-            if limit_str:
-                try:
-                    limit = int(limit_str)
-                    if limit > 0:
-                        messages = messages[-limit:]
-                except ValueError:
-                    pass
-            self._json(messages)
-            return
-        match = re.match(r"^/project/test-project/session/([^/]+)/message$", parsed.path)
         if match:
             messages = MESSAGES.get(match.group(1), [])
             qs = urllib.parse.parse_qs(parsed.query)
@@ -173,42 +162,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(session)
             return
 
-        if self.path == "/api/session":
-            self._json({"id": SESSION_ID, "directory": data.get("directory")})
-            return
-
-        match = re.match(r"^/session/([^/]+)/message$", self.path)
-        if match:
-            session_id = match.group(1)
-            if not data.get("model") or not data.get("agent") or not data.get("variant"):
-                self._record_prompt(data)
-                self._json([])
-                return
-            text = prompt_text(data)
-            self._record_prompt(data)
-            if "slow response" in text:
-                time.sleep(5)
-                if ABORTED.get(session_id):
-                    self._text("aborted", 499)
-                    return
-            user = user_message(f"user-message-{len(MESSAGES.get(session_id, [])) + 1}", text)
-            if "make add subtract" in text or "改成减法" in text:
-                target = os.path.join(os.getcwd(), "src", "example.lua")
-                if os.path.exists(target):
-                    with open(target, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    content = content.replace("return a + b", "return a - b")
-                    with open(target, "w", encoding="utf-8") as f:
-                        f.write(content)
-                reply_text = "已改好：src/example.lua 中 M.add(a, b) 现在返回 a - b。"
-            else:
-                reply_text = "fake reply: " + text
-                self._stream_reply(session_id, reply_text)
-            assistant = assistant_message(f"assistant-message-{len(MESSAGES.get(session_id, [])) + 2}", reply_text)
-            MESSAGES.setdefault(session_id, []).extend([user, assistant])
-            self._json(assistant)
-            return
-
         match = re.match(r"^/session/([^/]+)/prompt_async$", self.path)
         if match:
             session_id = match.group(1)
@@ -229,15 +182,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with open(os.path.join(os.getcwd(), ".opencode-chat-abort.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps({"sessionID": session_id}, ensure_ascii=False) + "\n")
             self._json({"ok": True})
-            return
-
-        if re.match(r"^/api/session/[^/]+/prompt$", self.path):
-            text = data.get("prompt", {}).get("text", "")
-            self._record_prompt(data)
-            user = {"info": {"id": "user-message", "role": "user"}, "parts": [text_part("user-message", text)]}
-            assistant = {"info": {"id": "assistant-message", "role": "assistant"}, "parts": [text_part("assistant-message", "fake reply: " + text)]}
-            MESSAGES["legacy"] = [user, assistant]
-            self._json(user)
             return
 
         self._text("not found", 404)
@@ -320,10 +264,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "type": "message.part.delta",
                 "properties": {
                     "sessionID": session_id,
-                    "part": {"id": "assistant-message-part", "type": "text", "text": chunk},
+                    "messageID": "assistant-message-part",
+                    "partID": "assistant-message-part",
+                    "field": "text",
+                    "delta": chunk,
                 },
             })
             time.sleep(0.05)
+        self._broadcast({
+            "id": "session-status-idle",
+            "type": "session.status",
+            "properties": {"sessionID": session_id, "status": {"type": "idle"}},
+        })
         self._broadcast({
             "id": "session-idle",
             "type": "session.idle",

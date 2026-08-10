@@ -39,6 +39,8 @@ local function path_segment(value)
   end)
 end
 
+-- URL constructors
+
 function M.app_url(opts)
   return url("/app", opts)
 end
@@ -49,14 +51,6 @@ end
 
 function M.session_url(opts)
   return url("/session", opts)
-end
-
-function M.legacy_session_url(opts)
-  return url("/api/session", opts)
-end
-
-function M.api_sessions_url(opts)
-  return url("/api/session", opts)
 end
 
 function M.message_url(session_id, opts)
@@ -83,12 +77,12 @@ function M.delete_session_url(session_id, opts)
   return url(target, opts)
 end
 
-function M.v1_abort_url(session_id, opts)
-  return url("/v1/sessions/" .. session_id .. "/abort", opts)
-end
-
-function M.legacy_prompt_url(session_id, opts)
-  return url("/api/session/" .. session_id .. "/prompt", opts)
+function M.event_url(opts)
+  local target = "/event"
+  if opts and opts.directory and opts.directory ~= "" then
+    target = target .. "?directory=" .. query_value(opts.directory)
+  end
+  return url(target, opts)
 end
 
 function M.project_url(opts)
@@ -99,21 +93,7 @@ function M.current_project_url(opts)
   return url("/project/current", opts)
 end
 
-function M.project_messages_url(project_id, session_id, opts)
-  return url("/project/" .. path_segment(project_id) .. "/session/" .. path_segment(session_id) .. "/message", opts)
-end
-
-function M.project_sessions_url(project_id, opts)
-  return url("/project/" .. path_segment(project_id) .. "/session", opts)
-end
-
-function M.event_url(opts)
-  local target = "/event"
-  if opts and opts.directory and opts.directory ~= "" then
-    target = target .. "?directory=" .. query_value(opts.directory)
-  end
-  return url(target, opts)
-end
+-- HTTP helpers
 
 function M.run(args, cb)
   debug.log("client", "run", { cmd = args and args[1], args = log_args(args) })
@@ -263,6 +243,8 @@ local function delete_json(target_url, cb)
   end)
 end
 
+-- Message helpers
+
 local function text_from_parts(parts)
   local out = {}
   if type(parts) ~= "table" then
@@ -276,24 +258,32 @@ local function text_from_parts(parts)
   return table.concat(out, "\n")
 end
 
-local function message_role(message)
+function M.extract_message_role_text(message)
   if type(message) ~= "table" then
-    return nil
+    return nil, ""
   end
   if message.info and message.info.role then
-    return message.info.role
+    return message.info.role, text_from_parts(message.parts)
   end
   if message.message and message.message.role then
-    return message.message.role
+    return message.message.role, message.message.text or ""
   end
-  return nil
+  return nil, ""
 end
 
-local function message_info(message)
-  if type(message) ~= "table" then
-    return nil
+function M.to_chat_messages(messages)
+  local out = {}
+  if type(messages) ~= "table" then
+    return out
   end
-  return message.info or message.message
+  for _, message in ipairs(messages) do
+    local role, text = M.extract_message_role_text(message)
+    if role and text ~= "" then
+      local label = role:sub(1, 1):upper() .. role:sub(2)
+      table.insert(out, { role = label, text = text })
+    end
+  end
+  return out
 end
 
 local function model_object(model)
@@ -326,85 +316,27 @@ local function session_model(model, variant)
   return value
 end
 
-function M.extract_message_text(message)
-  if type(message) ~= "table" then
-    return ""
+local function message_payload(text, opts)
+  opts = opts or {}
+  local payload = { parts = { { type = "text", text = text } } }
+  if opts.model then
+    payload.model = model_object(opts.model)
   end
-  if message.info and message.info.role == "assistant" then
-    return text_from_parts(message.parts)
+  if opts.agent then
+    payload.agent = opts.agent
   end
-  if message.message and message.message.role == "assistant" and type(message.message.text) == "string" then
-    return message.message.text
+  if opts.variant then
+    payload.variant = opts.variant
+  elseif type(opts.model) == "table" and opts.model.variant then
+    payload.variant = opts.model.variant
   end
-  return ""
+  return payload
 end
 
-function M.message_count(messages)
-  if type(messages) ~= "table" then
-    return 0
-  end
-  return #messages
-end
+M._model_object = model_object
+M._session_model = session_model
 
-function M.assistant_error(message)
-  local info = message_info(message)
-  local err = info and info.error
-  if type(err) == "table" then
-    return err.message or err.name or vim.inspect(err)
-  end
-  if type(err) == "string" and err ~= "" then
-    return err
-  end
-  return nil
-end
-
-function M.assistant_completed(message)
-  local info = message_info(message)
-  if type(info) ~= "table" then
-    return true
-  end
-  if M.assistant_error(message) then
-    return true
-  end
-  if type(info.time) ~= "table" then
-    return true
-  end
-  return info.time.completed ~= nil
-end
-
-function M.extract_assistant_after(messages, baseline_count, require_completed)
-  if type(messages) ~= "table" then
-    return "", nil, nil
-  end
-  baseline_count = math.max(tonumber(baseline_count) or 0, 0)
-  for index = #messages, baseline_count + 1, -1 do
-    local message = messages[index]
-    if message_role(message) == "assistant" then
-      local err = M.assistant_error(message)
-      if err then
-        return "", message, err
-      end
-      local text = M.extract_message_text(message)
-      if text ~= "" and (not require_completed or M.assistant_completed(message)) then
-        return text, message, nil
-      end
-    end
-  end
-  return "", nil, nil
-end
-
-function M.extract_assistant_text(messages)
-  if type(messages) ~= "table" then
-    return ""
-  end
-  for index = #messages, 1, -1 do
-    local text = M.extract_message_text(messages[index])
-    if text ~= "" then
-      return text
-    end
-  end
-  return ""
-end
+-- Public API
 
 function M.get_project_id(directory, opts, cb)
   local function project_id_from(project)
@@ -423,39 +355,39 @@ function M.get_project_id(directory, opts, cb)
       return
     end
 
-  get_json(M.project_url(opts), function(ok, data, result)
-    if not ok then
-      cb(false, nil, data, result)
-      return
-    end
-    local projects = data and (data.data or data)
-    if type(projects) == "table" then
-      projects = projects.projects or projects.items or projects.list or projects
-    end
-    if type(projects) ~= "table" then
-      cb(false, nil, data, result)
-      return
-    end
-    local first_id
-    local current_dir = directory and vim.fs.normalize(directory) or nil
-    for _, project in pairs(projects) do
-      local project_id = project_id_from(project)
-      local project_dir = project_dir_from(project)
-      project_dir = project_dir and vim.fs.normalize(project_dir) or nil
-      first_id = first_id or project_id
-      if current_dir and project_dir == current_dir then
-        cb(project_id ~= nil, project_id, data, result)
+    get_json(M.project_url(opts), function(ok, data, result)
+      if not ok then
+        cb(false, nil, data, result)
         return
       end
-    end
-    cb(first_id ~= nil, first_id, data, result)
-  end)
+      local projects = data and (data.data or data)
+      if type(projects) == "table" then
+        projects = projects.projects or projects.items or projects.list or projects
+      end
+      if type(projects) ~= "table" then
+        cb(false, nil, data, result)
+        return
+      end
+      local first_id
+      local current_dir = directory and vim.fs.normalize(directory) or nil
+      for _, project in ipairs(projects) do
+        local project_id = project_id_from(project)
+        local project_dir = project_dir_from(project)
+        project_dir = project_dir and vim.fs.normalize(project_dir) or nil
+        first_id = first_id or project_id
+        if current_dir and project_dir == current_dir then
+          cb(project_id ~= nil, project_id, data, result)
+          return
+        end
+      end
+      cb(first_id ~= nil, first_id, data, result)
+    end)
   end)
 end
 
 function M.create_session(directory, opts, cb)
   opts = opts or {}
-  debug.log("client", "create_session", { directory = directory, url = M.session_url(opts), legacy_url = M.legacy_session_url(opts), model = opts.model, agent = opts.agent })
+  debug.log("client", "create_session", { directory = directory, url = M.session_url(opts), model = opts.model, agent = opts.agent })
   local payload = { title = vim.fn.fnamemodify(directory, ":t") }
   if opts.agent then
     payload.agent = opts.agent
@@ -466,87 +398,9 @@ function M.create_session(directory, opts, cb)
 
   return post_json(M.session_url(opts), payload, function(ok, data, result)
     local id = data and ((data.data and data.data.id) or data.id)
-    debug.log("client", "create_session.session_done", { ok = ok, id = id, status = result and result.status, error = debug.preview(result and result.error) })
-    if ok and id then
-      cb(true, id, data, result, "session")
-      return
-    end
-
-    post_json(M.legacy_session_url(opts), { directory = directory }, function(legacy_ok, legacy_data, legacy_result)
-      local legacy_id = legacy_data and ((legacy_data.data and legacy_data.data.id) or legacy_data.id)
-      debug.log("client", "create_session.legacy_done", { ok = legacy_ok, id = legacy_id, status = legacy_result and legacy_result.status, error = debug.preview(legacy_result and legacy_result.error) })
-      cb(legacy_ok and legacy_id ~= nil, legacy_id, legacy_data, legacy_result, "legacy")
-    end)
+    debug.log("client", "create_session.done", { ok = ok, id = id, status = result and result.status, error = debug.preview(result and result.error) })
+    cb(ok and id ~= nil, id, data, result)
   end)
-end
-
-function M.send_message(session_id, text, opts, cb)
-  opts = opts or {}
-  debug.log("client", "send_message", { session_id = session_id, api_style = opts.api_style, url = M.message_url(session_id, opts), legacy_url = M.legacy_prompt_url(session_id, opts), text_len = #(text or ""), text_preview = debug.preview(text), model = opts.model, agent = opts.agent })
-  local payload = { parts = { { type = "text", text = text } } }
-  if opts.model then
-    payload.model = model_object(opts.model)
-  end
-  if opts.agent then
-    payload.agent = opts.agent
-  end
-  if opts.variant then
-    payload.variant = opts.variant
-  elseif type(opts.model) == "table" and opts.model.variant then
-    payload.variant = opts.model.variant
-  end
-  local function send_legacy()
-    local legacy_payload = { prompt = { text = text } }
-    if opts.model then
-      legacy_payload.model = opts.model
-    end
-    if opts.agent then
-      legacy_payload.agent = opts.agent
-    end
-    if opts.variant then
-      legacy_payload.variant = opts.variant
-    end
-    return post_json(M.legacy_prompt_url(session_id, opts), legacy_payload, function(legacy_ok, legacy_data, legacy_result)
-      debug.log("client", "send_message.legacy_done", { session_id = session_id, ok = legacy_ok, status = legacy_result and legacy_result.status, error = debug.preview(legacy_result and legacy_result.error), reply_len = #(M.extract_message_text(legacy_data) or "") })
-      cb(legacy_ok, legacy_data, legacy_result, M.extract_message_text(legacy_data), "legacy")
-    end, opts.timeout_ms or config.get().response_timeout_ms)
-  end
-
-  if opts.api_style == "legacy" then
-    return send_legacy()
-  end
-
-  return post_json(M.message_url(session_id, opts), payload, function(ok, data, result)
-    debug.log("client", "send_message.session_done", { session_id = session_id, ok = ok, status = result and result.status, error = debug.preview(result and result.error), reply_len = #(M.extract_message_text(data) or "") })
-    if ok then
-      cb(true, data, result, M.extract_message_text(data), "session")
-      return
-    end
-
-    if opts.api_style == "session" then
-      cb(false, data, result, "", "session")
-      return
-    end
-
-    return send_legacy()
-  end, opts.timeout_ms or config.get().response_timeout_ms)
-end
-
-local function message_payload(text, opts)
-  opts = opts or {}
-  local payload = { parts = { { type = "text", text = text } } }
-  if opts.model then
-    payload.model = model_object(opts.model)
-  end
-  if opts.agent then
-    payload.agent = opts.agent
-  end
-  if opts.variant then
-    payload.variant = opts.variant
-  elseif type(opts.model) == "table" and opts.model.variant then
-    payload.variant = opts.model.variant
-  end
-  return payload
 end
 
 function M.send_message_async(session_id, text, opts, cb)
@@ -559,19 +413,26 @@ function M.send_message_async(session_id, text, opts, cb)
 end
 
 function M.list_sessions(opts, cb)
-  return get_json(M.session_url(opts), function(ok, data, result)
-    if ok then
-      cb(ok, data, result, "session")
-      return
-    end
-    get_json(M.api_sessions_url(opts), function(api_ok, api_data, api_result)
-      cb(api_ok, api_data, api_result, "api")
-    end)
+  local target = M.session_url(opts)
+  if opts.scope == "project" and opts.path and opts.path ~= "" then
+    target = target .. "?scope=project&path=" .. query_value(opts.path)
+  end
+  return get_json(target, function(ok, data, result)
+    cb(ok, data, result)
+  end, opts.timeout_ms)
+end
+
+function M.get_messages(session_id, opts, cb)
+  get_json(M.message_url(session_id, opts), function(ok, data, result)
+    cb(ok, data, result)
   end)
 end
 
-function M.list_project_sessions(project_id, opts, cb)
-  return get_json(M.project_sessions_url(project_id, opts), cb)
+function M.abort_session(session_id, opts, cb)
+  opts = opts or {}
+  return post_json(M.abort_url(session_id, opts), {}, function(ok, data, result)
+    cb(ok, data, result)
+  end, opts.timeout_ms)
 end
 
 function M.rename_session(session_id, title, opts, cb)
@@ -580,230 +441,6 @@ end
 
 function M.delete_session(session_id, opts, cb)
   return delete_json(M.delete_session_url(session_id, opts), cb)
-end
-
-function M.extract_message_role_text(message)
-  if type(message) ~= "table" then
-    return nil, ""
-  end
-  if message.info and message.info.role then
-    return message.info.role, text_from_parts(message.parts)
-  end
-  if message.message and message.message.role then
-    return message.message.role, message.message.text or ""
-  end
-  return nil, ""
-end
-
-function M.to_chat_messages(messages)
-  local out = {}
-  if type(messages) ~= "table" then
-    return out
-  end
-  for _, message in ipairs(messages) do
-    local role, text = M.extract_message_role_text(message)
-    if role and text ~= "" then
-      local label = role:sub(1, 1):upper() .. role:sub(2)
-      table.insert(out, { role = label, text = text })
-    end
-  end
-  return out
-end
-
-M._model_object = model_object
-M._session_model = session_model
-
-function M.abort_session(session_id, opts, cb)
-  opts = opts or {}
-  return post_json(M.abort_url(session_id, opts), {}, function(ok, data, result)
-    if ok then
-      cb(true, data, result, "session")
-      return
-    end
-
-    post_json(M.v1_abort_url(session_id, opts), {}, function(v1_ok, v1_data, v1_result)
-      cb(v1_ok, v1_data, v1_result, "v1")
-    end)
-  end)
-end
-
-function M.get_messages(session_id, opts, cb)
-  get_json(M.message_url(session_id, opts), cb)
-end
-
-function M.get_project_messages(project_id, session_id, opts, cb)
-  get_json(M.project_messages_url(project_id, session_id, opts), cb)
-end
-
-function M.wait_for_assistant(session_id, opts, cb)
-  opts = opts or {}
-  debug.log("client", "wait_for_assistant", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id })
-  local deadline = vim.loop.hrtime() + ((opts.timeout_ms or config.get().response_timeout_ms) * 1000000)
-  local token = { cancelled = false, handle = nil }
-
-  function token.cancel()
-    token.cancelled = true
-    if token.handle and token.handle.kill then
-      pcall(function()
-        token.handle:kill(15)
-      end)
-    end
-  end
-
-  local function poll()
-    if token.cancelled then
-      cb(false, "", nil, { body = "cancelled" })
-      return
-    end
-
-    token.handle = M.get_messages(session_id, opts, function(ok, data, result)
-      debug.log("client", "wait_for_assistant.poll_done", { session_id = session_id, ok = ok, status = result and result.status, text_len = #(ok and M.extract_assistant_text(data) or "") })
-      if token.cancelled then
-        cb(false, "", nil, { body = "cancelled" })
-        return
-      end
-      local text = ok and M.extract_assistant_text(data) or ""
-      if text ~= "" then
-        cb(true, text, data, result)
-        return
-      end
-
-      if not ok and opts.project_id then
-        token.handle = M.get_project_messages(opts.project_id, session_id, opts, function(project_ok, project_data, project_result)
-          debug.log("client", "wait_for_assistant.project_poll_done", { session_id = session_id, project_id = opts.project_id, ok = project_ok, status = project_result and project_result.status, text_len = #(project_ok and M.extract_assistant_text(project_data) or "") })
-          if token.cancelled then
-            cb(false, "", nil, { body = "cancelled" })
-            return
-          end
-          local project_text = project_ok and M.extract_assistant_text(project_data) or ""
-          if project_text ~= "" then
-            cb(true, project_text, project_data, project_result)
-            return
-          end
-          if vim.loop.hrtime() >= deadline then
-            debug.log("client", "wait_for_assistant.timeout", { session_id = session_id, project = true })
-            cb(false, "", project_data, project_result)
-            return
-          end
-          vim.defer_fn(poll, 200)
-        end)
-        return
-      end
-
-      if vim.loop.hrtime() >= deadline then
-        debug.log("client", "wait_for_assistant.timeout", { session_id = session_id, project = false })
-        cb(false, "", data, result)
-        return
-      end
-      vim.defer_fn(poll, 200)
-    end)
-  end
-
-  poll()
-  return token
-end
-
-function M.wait_for_assistant_after(session_id, opts, baseline_count, cb)
-  opts = opts or {}
-  debug.log("client", "wait_for_assistant_after", { session_id = session_id, timeout_ms = opts.timeout_ms, project_id = opts.project_id, baseline_count = baseline_count })
-  local timeout_ms = opts.timeout_ms or config.get().response_timeout_ms
-  local deadline = timeout_ms and timeout_ms > 0 and (vim.loop.hrtime() + timeout_ms * 1000000) or nil
-  local token = { cancelled = false, handle = nil }
-
-  function token.cancel()
-    token.cancelled = true
-    if token.handle and token.handle.kill then
-      pcall(function()
-        token.handle:kill(15)
-      end)
-    end
-  end
-
-  local function done(found, text, data, result, err)
-    cb(found, text, data, result, err)
-  end
-
-  local function inspect_messages(ok, data)
-    if not ok then
-      return "", nil, "request failed"
-    end
-    if data == nil then
-      return "", nil, "empty or unparseable response from server"
-    end
-    return M.extract_assistant_after(data, baseline_count, true)
-  end
-
-  local function poll()
-    if token.cancelled then
-      done(false, "", nil, { body = "cancelled" })
-      return
-    end
-
-    token.handle = M.get_messages(session_id, opts, function(ok, data, result)
-      local text, message, err = inspect_messages(ok, data)
-      debug.log("client", "wait_for_assistant_after.poll_done", { session_id = session_id, ok = ok, status = result and result.status, text_len = #(text or ""), completed = message and M.assistant_completed(message), error = err })
-      if token.cancelled then
-        done(false, "", nil, { body = "cancelled" })
-        return
-      end
-      if err then
-        result = result or {}
-        result.body = err
-        result.error = err
-        done(false, "", data, result, err)
-        return
-      end
-      if text ~= "" then
-        done(true, text, data, result)
-        return
-      end
-
-      if not ok and opts.project_id then
-        token.handle = M.get_project_messages(opts.project_id, session_id, opts, function(project_ok, project_data, project_result)
-          local project_text, project_message, project_err = inspect_messages(project_ok, project_data)
-          debug.log("client", "wait_for_assistant_after.project_poll_done", { session_id = session_id, project_id = opts.project_id, ok = project_ok, status = project_result and project_result.status, text_len = #(project_text or ""), completed = project_message and M.assistant_completed(project_message), error = project_err })
-          if token.cancelled then
-            done(false, "", nil, { body = "cancelled" })
-            return
-          end
-          if project_err then
-            project_result = project_result or {}
-            project_result.body = project_err
-            project_result.error = project_err
-            done(false, "", project_data, project_result, project_err)
-            return
-          end
-          if project_text ~= "" then
-            done(true, project_text, project_data, project_result)
-            return
-          end
-          if deadline and vim.loop.hrtime() >= deadline then
-            debug.log("client", "wait_for_assistant_after.timeout", { session_id = session_id, project = true })
-            project_result = project_result or {}
-            project_result.body = "assistant response timed out"
-            project_result.error = project_result.body
-            done(false, "", project_data, project_result)
-            return
-          end
-          vim.defer_fn(poll, 200)
-        end)
-        return
-      end
-
-      if deadline and vim.loop.hrtime() >= deadline then
-        debug.log("client", "wait_for_assistant_after.timeout", { session_id = session_id, project = false })
-        result = result or {}
-        result.body = "assistant response timed out"
-        result.error = result.body
-        done(false, "", data, result)
-        return
-      end
-      vim.defer_fn(poll, 200)
-    end)
-  end
-
-  poll()
-  return token
 end
 
 function M.wait_until_ready(opts, cb)

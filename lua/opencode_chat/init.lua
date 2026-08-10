@@ -7,45 +7,18 @@ local commands = require("opencode_chat.commands")
 local quick = require("opencode_chat.quick")
 
 local M = {}
+local handle = nil
 local request = {
   busy = false,
   cancelling = false,
-  id = 0,
 }
-local spinner = {
-  timer = nil,
-  index = 1,
-  frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
-}
+
+M._request = request
 
 local function notify_error(message)
   vim.schedule(function()
     vim.notify(message, vim.log.levels.ERROR)
   end)
-end
-
-local function stop_spinner(status)
-  if spinner.timer then
-    spinner.timer:stop()
-    spinner.timer:close()
-    spinner.timer = nil
-  end
-  ui.set_status(status or "Idle")
-end
-
-local function start_spinner(label)
-  stop_spinner(label)
-  spinner.index = 1
-  spinner.timer = vim.loop.new_timer()
-  spinner.timer:start(0, 120, vim.schedule_wrap(function()
-    if not request.busy then
-      stop_spinner("Idle")
-      return
-    end
-    local frame = spinner.frames[spinner.index]
-    spinner.index = (spinner.index % #spinner.frames) + 1
-    ui.set_status((label or "Thinking") .. " " .. frame)
-  end))
 end
 
 local function build_prompt(text)
@@ -173,26 +146,66 @@ function M.ask(text)
 
   local prompt, project_root = build_prompt(text)
   request.busy = true
-  request.id = request.id + 1
-  local request_id = request.id
+  request.cancelling = false
   ui.add_message("User", prompt)
   ui.add_message("Assistant", "Thinking...")
-  start_spinner("Thinking")
+  local accumulated = {}
 
-  server.send(prompt, project_root, function(ok, reply, err)
-    vim.schedule(function()
-      if request_id ~= request.id then
-        return
-      end
+  handle = server.send(prompt, project_root, {
+    on_spinner = function(frame)
+      ui.set_status("Thinking " .. frame)
+    end,
+    on_delta = function(chunk)
+      table.insert(accumulated, chunk)
+      ui.update_last("Assistant", table.concat(accumulated, ""))
+    end,
+    on_completed = function()
+      local full_text = table.concat(accumulated, "")
       request.busy = false
-      stop_spinner(ok and "Idle" or "Error")
-      if ok then
-        ui.replace_last_if("Assistant", "Thinking...", "Assistant", reply ~= "" and reply or "(empty response)")
-      else
-        ui.replace_last_if("Assistant", "Thinking...", "Error", tostring(err or "opencode request failed"))
+      request.cancelling = false
+      ui.set_status("Idle")
+      ui.update_last("Assistant", full_text ~= "" and full_text or "(empty response)")
+      handle = nil
+    end,
+    on_error = function(err)
+      request.busy = false
+      request.cancelling = false
+      ui.set_status("Error")
+      ui.replace_last_if("Assistant", "Thinking...", "Error", tostring(err or "opencode request failed"))
+      handle = nil
+    end,
+    on_cancelled = function()
+      request.busy = false
+      request.cancelling = false
+      server.state().session_id = nil
+      ui.set_status("Cancelled")
+      -- Replace "Thinking..." or "Cancelling..." with "Cancelled" once
+      local msgs = ui.state().messages
+      for i = #msgs, 1, -1 do
+        local m = msgs[i]
+        if m.role == "Assistant" and (m.text == "Thinking..." or m.text == "Editing...") then
+          msgs[i] = { role = "Cancelled", text = "Cancelled by opencode." }
+          ui.render()
+          handle = nil
+          return
+        elseif m.role == "System" and m.text == "Cancelling..." then
+          msgs[i] = { role = "Cancelled", text = "Cancelled by opencode." }
+          ui.render()
+          handle = nil
+          return
+        elseif m.role == "Cancelled" then
+          -- Already has a Cancelled message, skip
+          ui.render()
+          handle = nil
+          return
+        end
       end
-    end)
-  end)
+      -- Not found, add new
+      table.insert(msgs, { role = "Cancelled", text = "Cancelled by opencode." })
+      ui.render()
+      handle = nil
+    end,
+  })
 end
 
 function M.cancel()
@@ -204,10 +217,17 @@ function M.cancel()
     notify_error("opencode request is already cancelling")
     return
   end
-  request.id = request.id + 1
   request.cancelling = true
   ui.mark_cancelling()
-  stop_spinner("Cancelling")
+  ui.set_status("Cancelling")
+
+  if handle then
+    handle.cancel()
+    -- on_cancelled callback handles UI updates
+    return
+  end
+
+  -- Fallback: no handle (should not happen)
   server.cancel(function(ok, message)
     vim.schedule(function()
       request.busy = false
@@ -287,23 +307,27 @@ function M.edit(instruction)
   ui.add_message("User", "/edit " .. instruction)
   ui.add_message("Assistant", "Editing...")
   request.busy = true
-  request.id = request.id + 1
-  local request_id = request.id
-  start_spinner("Editing")
-  server.send(prompt, project_root, function(ok, reply, err)
-    vim.schedule(function()
-      if request_id ~= request.id then
-        return
-      end
+  request.cancelling = false
+
+  handle = server.send(prompt, project_root, {
+    on_spinner = function(frame)
+      ui.set_status("Editing " .. frame)
+    end,
+    on_completed = function(full_text)
       request.busy = false
-      stop_spinner(ok and "Idle" or "Error")
-      if not ok then
-        ui.replace_last_if("Assistant", "Editing...", "Error", tostring(err or "opencode edit failed"))
-        return
-      end
-      ui.update_last("Assistant", reply ~= "" and reply or "(edit completed)")
-    end)
-  end)
+      request.cancelling = false
+      ui.set_status("Idle")
+      ui.update_last("Assistant", full_text ~= "" and full_text or "(edit completed)")
+      handle = nil
+    end,
+    on_error = function(err)
+      request.busy = false
+      request.cancelling = false
+      ui.set_status("Error")
+      ui.replace_last_if("Assistant", "Editing...", "Error", tostring(err or "opencode edit failed"))
+      handle = nil
+    end,
+  })
 end
 
 function M.new_session()
@@ -557,14 +581,15 @@ end
 function M.stop()
   request.busy = false
   request.cancelling = false
-  request.id = request.id + 1
-  stop_spinner("Idle")
+  if handle then
+    handle.cancel()
+    handle = nil
+  end
   quick.close()
   server.stop()
   ui.close()
 end
 
 M._build_prompt = build_prompt
-M._request = request
 
 return M

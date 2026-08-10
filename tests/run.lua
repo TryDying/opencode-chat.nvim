@@ -287,21 +287,13 @@ opencode.clear_context()
 assert_eq(#ui.state().context, 0, "clear_context should remove all context items")
 vim.api.nvim_set_current_win(code_win)
 
-assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should prefer current API")
-assert_eq(client.api_sessions_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session list fallback URL should target v2 API")
-assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should prefer current API")
+assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should target current API")
+assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should target current API")
 assert_eq(client.prompt_async_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/prompt_async", "async prompt URL should target current API")
-assert_eq(client.legacy_prompt_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "legacy prompt URL should remain available")
 assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
 assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc", "rename URL should target session update API")
 assert_eq(client.delete_session_url("abc", { host = "127.0.0.1", port = 12345, directory = "/tmp/a b" }), "http://127.0.0.1:12345/session/abc?directory=%2Ftmp%2Fa%20b", "delete URL should include encoded directory query")
 assert_eq(client.current_project_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/current", "current project URL should target project/current API")
-assert_eq(client.project_sessions_url("project", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project/session", "project sessions URL should target project-scoped sessions")
-assert_eq(client.project_sessions_url("project/with slash", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/project%2Fwith%20slash/session", "project id should be URL encoded")
-assert_eq(client.extract_assistant_text({
-  { info = { role = "user" }, parts = { { type = "text", text = "question" } } },
-  { info = { role = "assistant" }, parts = { { type = "text", text = "answer" } } },
-}), "answer", "extract_assistant_text should ignore user echo and read assistant text parts")
 assert_eq(client.format_error({ status = 400, body = "bad request", stderr = "" }, "fallback"), "HTTP 400: bad request", "format_error should not let empty stderr hide HTTP body")
 
 opencode.append_file()
@@ -490,7 +482,7 @@ assert_true(not opencode.select_model("deepseek", "missing-model"), "unconfigure
 opencode.ask("model switch")
 assert_true(wait_for(function()
   local messages = ui.state().messages
-  return messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("model switch") ~= nil
+  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("model switch") ~= nil
 end, 3000), "request after model switch should complete")
 lines = vim.fn.readfile(prompt_file)
 payload = vim.json.decode(lines[#lines])

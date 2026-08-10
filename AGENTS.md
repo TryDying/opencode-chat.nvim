@@ -41,8 +41,11 @@ These routing rules are mandatory for this repository.
 ## Architecture highlights
 
 - Use a right-side Neovim split panel for the main Chat UI; `nui.nvim` may be used for picker/menu UI, but do not add `vim-floaterm` support.
-- MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session`, and `POST /session/:sessionID/message`, with legacy `/api/session` fallback only for compatibility.
-- Model configuration uses provider-grouped allowlists: `model = "provider/model"`, `providers[provider].variants`, and `providers[provider].models[].default_variant`; do not use top-level `variant`.
+- MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session` (create), `POST /session/:sessionID/prompt_async` (send), `GET /event` (SSE streaming), `POST /session/:sessionID/abort` (cancel).
+- Communication: `chat.lua` orchestrates per-request lifecycle (SSE subscribe → on_connected → prompt_async → stream → complete). `server.lua` manages server job and session lifecycle. `client.lua` wraps HTTP calls.
+- All legacy API paths (`/api/session`, `/api/session/:id/prompt`, `/v1/sessions/:id/abort`) are removed. Only current OpenCode v1.18.15 API is supported.
+- Session listing uses `GET /session?scope=project&path=...`. `/project/:projectID/session` does not exist in the current API.
+- SSE completion: `session.status {type:"idle"}` primary, `session.idle` fallback. `session.next.step.ended` is passed through as a normal event.
 - `agent`, `model`, and `variant` must be included in current `/session/:sessionID/message` payloads; session creation uses model `{ providerID, id, variant }`, while messages use `{ providerID, modelID }` plus top-level `agent`/`variant`.
 - Cancellation must call `POST /session/:sessionID/abort`; do not represent local curl/loop termination as backend cancellation.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
@@ -66,10 +69,15 @@ These routing rules are mandatory for this repository.
 - `lua/opencode_chat/root.lua`: project root detection from root markers.
 - `lua/opencode_chat/server.lua`: headless opencode server job and session lifecycle.
 - `lua/opencode_chat/client.lua`: HTTP wrapper for session creation and prompt submission.
-- `lua/opencode_chat/ui.lua`: native floating message/input buffers, rendering, and queued context display.
+- `lua/opencode_chat/sse.lua`: TCP SSE client with event routing.
+- `lua/opencode_chat/chat.lua`: per-request lifecycle coordination (SSE → prompt_async → stream).
+- `lua/opencode_chat/ui.lua`: native split message/input buffers, rendering, and queued context display.
+- `lua/opencode_chat/quick_ui.lua`: Quick Ask floating window UI with independent context.
 - `lua/opencode_chat/context.lua`: current-file and Visual-selection reference generation.
 - `lua/opencode_chat/commands.lua`: command registration such as `:OpencodeToggle`.
-- `lua/opencode_chat/init.lua`: public setup/API entrypoint.
+- `lua/opencode_chat/picker.lua`: session/model/variant selection UI.
+- `lua/opencode_chat/init.lua`: public setup/API entrypoint, request dispatch.
+- `lua/opencode_chat/quick.lua`: Quick Ask event dispatch, temporary session lifecycle.
 
 ## Explicit non-goals for the MVP
 
