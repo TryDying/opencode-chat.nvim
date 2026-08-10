@@ -378,3 +378,40 @@
 - 预防：后续任何流式实现必须确保"先发后订"时序；fixture 的 SSE 完成信号需覆盖 `session.idle`，不能仅依赖消息数组变更。
 - commitID：9aa037f
 
+## 2026-08-10：系统性重构 OpenCode 通信层
+
+- 问题：
+  1. 代码中保留了大量 legacy API fallback（`/api/session`、`/api/session/:id/prompt`、`/v1/sessions/:id/abort`），以及不存在的端点（`/project/:projectID/session`），增加了状态管理（`api_style`）和代码路径复杂度。
+  2. `client.lua` 同时维护三套通信路径：async send + SSE、sync send、polling wait_for_assistant，实际生产只使用第一套。
+  3. `send_to_session` 内 async→sync→SSE 三级 fallback 链，实际 sync 和 polling 从未触发但增加了竞态面和测试维护成本。
+  4. 主 Chat 和 Quick Ask 的 request 生命周期逻辑（busy guard、spinner、build prompt、cancel）几乎完全重复。
+  5. SSE 完成检测使用三重信号（`session.idle`/`session.status`/`message.updated`），其中 `message.updated` 不应作为请求完成信号。
+  6. `extract_delta_text` 兼容双格式（真实 `properties.delta` 和 fixture `properties.part.text`），增加了不必要的兼容分支。
+  7. "先 send_message_async 再 subscribe SSE" 的顺序存在早期 delta 丢失的竞态。
+
+- 方案：
+  1. **删除所有 legacy API 兼容代码**：移除 `legacy_session_url`、`api_sessions_url`、`legacy_prompt_url`、`v1_abort_url`、`project_sessions_url`、`project_messages_url` 等 URL 函数；移除 `send_message`（sync）、`wait_for_assistant`/`wait_for_assistant_after`（polling）、`extract_assistant_text`/`extract_assistant_after` 等函数；简化 `create_session`/`abort_session`/`list_sessions` 为单一路径。
+  2. **统一通信路径为 async + SSE**：`server.lua` 删除 `send_sync`、`send_to_session` 内的 fallback 链、`api_style` 状态追踪；`send_async` + `subscribe_sse` 为唯一发送路径。
+  3. **抽取 `chat.lua` 请求生命周期**：封装 "SSE subscribe → on_connected → prompt_async → stream → complete/error/cancel" 的通用模式，内置 spinner；`init.lua` 和 `quick.lua` 通过回调模式复用，消除 ~700 行重复代码。
+  4. **修正 SSE 订阅顺序**：从"先发后订"改为**"先订 SSE → 收到 server.connected → 发 prompt_async"**，彻底消除早期 delta 丢失的竞态。
+  5. **SSE 完成信号修正**：`session.status {type:"idle"}` 为主信号，`session.idle` 为 fallback；移除 `message.updated` 作为完成信号；删除 `properties.part.text` 兼容。
+  6. **SSE 事件路由增强**：`process_event` 支持 `message.part.delta`、`session.next.text.delta`、`session.next.reasoning.delta`、`session.next.tool.*`、`session.error`、`session.status` 等事件类型，不删除任何事件处理能力。
+  7. **修正 session list API**：确认 OpenCode v1.18.15 中 `/project/:projectID/session` 不存在，session 列表统一使用 `GET /session?scope=project&path=...`。
+  8. **cancel 流程去重**：`on_cancelled` 回调改为 idempotent（扫描消息列表中的 "Thinking..."/"Cancelling..." 并替换），避免双重调用导致重复 "Cancelled" 消息。
+
+- 结果：
+  - 删除 ~1200 行旧代码，新增 ~640 行，净减少 ~560 行
+  - 模块数从 14 增加到 15（新增 `chat.lua`，但 `quick.lua` 大幅瘦身）
+  - `client.lua`: 830→360 行；`server.lua`: 827→380 行；`init.lua`: 570→300 行；`quick.lua`: 361→160 行
+  - 消除了全部 7 个 legacy URL 函数、6 个 polling/wait 函数、`api_style` 状态追踪、三级 fallback 链
+  - 所有测试通过
+
+- 预防：
+  1. SSE 顺序必须是"先订 SSE，收到 server.connected 后再发 prompt_async"，不要在代码中回到"先发后订"。
+  2. 不要再添加 legacy API fallback / `api_style` 追踪；当前只支持 OpenCode v1.18.15+ 的 `/session`、`/session/:id/prompt_async`、`/event`、`/session/:id/abort` API。
+  3. 不要再把 `session.next.step.ended` 作为请求完成信号（它是 durable step 结算事件，不是 session 空闲信号）。
+  4. 不要再在 fixture 中添加 `properties.part.text` 格式的 delta 事件；统一使用 `properties.delta`。
+  5. `chat.lua` 只负责一次 request 的生命周期，不要把 session 管理、context 构建、UI 渲染塞进去。
+
+- commitID：6ab60e9
+
