@@ -415,3 +415,15 @@
 
 - commitID：6ab60e9
 
+## 2026-08-10：过滤 reasoning/thinking 内容
+
+- 问题：OpenCode v1.18.15 的 `opencode serve` v1 管线将推理内容和正文都通过 `message.part.delta` (`field:"text"`) 发送，delta 事件本身无法区分。导致思考过程（如 "CodeGraph 不可用，需要手动指定 projectPath…"）直接显示在聊天 UI 中。
+- 方案：
+  1. `sse.lua` 新增 `part_types` 表（partID → type），由 `message.part.updated` 事件填充 Part 快照的 `type` 字段（`"reasoning"` vs `"text"`）。
+  2. `message.part.delta` 路由时检查 `part_types[props.partID]`：若为 `"reasoning"` 则路由到 `on_reasoning` 回调（默认隐藏），否则正常路由到 `on_delta`。
+  3. `chat.lua` 累积 reasoning 文本独立于主回复，不混入 `on_completed` 返回的正文。
+  4. fixture 新增 `_stream_with_reasoning` 方法，模拟完整 reasoning 括号：`message.part.updated`(type="reasoning") → `message.part.delta`(reasoning) → `message.part.updated`(end) → `_stream_reply`(reply)。`_stream_reply` 也增加了 `message.part.updated` 快照保证 part_type 追踪正常工作。
+  5. 测试新增 "reasoning test" 场景，断言思考内容不出现在 UI 消息列表中。
+- 预防：后续若要支持"展开思考"功能，在 `chat.lua` 中 `on_reasoning` 已有完整累积；UI 层只需接收 `on_reasoning` 回调即可。不要回退到无条件透传所有 delta 的行为。
+- commitID：bf0e6e0
+
