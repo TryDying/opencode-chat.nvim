@@ -250,11 +250,67 @@ class Handler(http.server.BaseHTTPRequestHandler):
         for subscriber in subscribers:
             subscriber.put(event)
 
+    def _stream_with_reasoning(self, session_id, thinking_text, reply_text):
+        """Simulate a response with reasoning/thinking content before the actual reply."""
+        with SUBSCRIBERS_LOCK:
+            has_subscribers = bool(SUBSCRIBERS)
+        if not has_subscribers:
+            return
+        # 1. Reasoning part start: message.part.updated (type="reasoning", empty text)
+        self._broadcast({
+            "id": "reasoning-part-updated-start",
+            "type": "message.part.updated",
+            "properties": {
+                "sessionID": session_id,
+                "part": {"id": "reasoning-part-1", "type": "reasoning", "text": ""},
+                "time": int(time.time() * 1000),
+            },
+        })
+        # 2. Reasoning deltas (should be filtered by client)
+        thinking_chunks = [thinking_text[:15], thinking_text[15:]]
+        for index, chunk in enumerate(thinking_chunks):
+            if not chunk:
+                continue
+            self._broadcast({
+                "id": f"reasoning-delta-{index}",
+                "type": "message.part.delta",
+                "properties": {
+                    "sessionID": session_id,
+                    "messageID": "assistant-message",
+                    "partID": "reasoning-part-1",
+                    "field": "text",
+                    "delta": chunk,
+                },
+            })
+            time.sleep(0.05)
+        # 3. Reasoning part end: message.part.updated (type="reasoning", full text)
+        self._broadcast({
+            "id": "reasoning-part-updated-end",
+            "type": "message.part.updated",
+            "properties": {
+                "sessionID": session_id,
+                "part": {"id": "reasoning-part-1", "type": "reasoning", "text": thinking_text},
+                "time": int(time.time() * 1000),
+            },
+        })
+        # 4. Now stream the actual text reply via _stream_reply
+        self._stream_reply(session_id, reply_text)
+
     def _stream_reply(self, session_id, text):
         with SUBSCRIBERS_LOCK:
             has_subscribers = bool(SUBSCRIBERS)
         if not has_subscribers:
             return
+        # 先发 part 快照，让 SSE client 知道这是 text part（非 reasoning）
+        self._broadcast({
+            "id": "part-updated-start",
+            "type": "message.part.updated",
+            "properties": {
+                "sessionID": session_id,
+                "part": {"id": "assistant-message-part", "type": "text", "text": ""},
+                "time": int(time.time() * 1000),
+            },
+        })
         chunks = [text[:10], text[10:25], text[25:]]
         for index, chunk in enumerate(chunks):
             if not chunk:
@@ -271,6 +327,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 },
             })
             time.sleep(0.05)
+        # 补发完整 part 快照（reasoning-end 对应的 behavior）
+        self._broadcast({
+            "id": "part-updated-end",
+            "type": "message.part.updated",
+            "properties": {
+                "sessionID": session_id,
+                "part": {"id": "assistant-message-part", "type": "text", "text": text},
+                "time": int(time.time() * 1000),
+            },
+        })
         self._broadcast({
             "id": "session-status-idle",
             "type": "session.status",
@@ -315,6 +381,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 time.sleep(0.1)  # give SSE subscriber time to connect
                 self._stream_reply(session_id, edit_text)
                 MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", edit_text))
+                return
+            elif "reasoning test" in text:
+                reply_text = "fake reply: " + text
+                thinking_text = "This is hidden thinking content that should NOT appear in the chat UI"
+                self._stream_with_reasoning(session_id, thinking_text, reply_text)
+                MESSAGES.setdefault(session_id, []).append(assistant_message(f"assistant-message-{base + 2}", reply_text))
                 return
             reply_text = "fake reply: " + text
             time.sleep(0.1)  # give SSE subscriber time to connect before streaming

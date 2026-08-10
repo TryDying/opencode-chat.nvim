@@ -497,6 +497,22 @@ assert_true(wait_for(function()
 end, 3000), "async polling should wait for the completed assistant response instead of returning an in-progress partial")
 assert_true(ui.state().messages[#ui.state().messages].text:match("fake reply: partial$") == nil, "async polling should not render the unfinished partial assistant text")
 
+opencode.ask("reasoning test should hide thinking")
+assert_true(wait_for(function()
+  local messages = ui.state().messages
+  return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("reasoning test") ~= nil
+end, 3000), "reasoning test should complete with visible reply")
+-- 推理/思考内容不应出现在任一消息中
+local reasoning_leaked = false
+for _, message in ipairs(ui.state().messages) do
+  if message.text and message.text:match("hidden thinking") then
+    reasoning_leaked = true
+    break
+  end
+end
+assert_true(not reasoning_leaked, "reasoning content should NOT appear in chat messages")
+assert_true(ui.state().messages[#ui.state().messages].text:match("fake reply") ~= nil, "visible reply should still contain normal text")
+
 opencode.ask("slow response")
 assert_true(wait_for(function()
   return opencode._request.busy == true
@@ -600,7 +616,7 @@ picker.close()
 opencode.select_session("test-session-1")
 assert_true(wait_for(function()
   local messages = ui.state().messages
-  return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("partial response") ~= nil
+  return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("reasoning test") ~= nil
 end, 3000), "select_session should switch back and render history")
 
 local main_session_before_quick = server.state().session_id

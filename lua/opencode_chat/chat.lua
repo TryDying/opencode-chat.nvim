@@ -20,6 +20,7 @@ local M = {}
 --- }
 --- @param callbacks {
 ---   on_delta: fun(text_chunk: string)?,     -- 流式增量文本（可选）
+---   on_reasoning: fun(text_chunk: string)?, -- 推理/思考内容（可选，不混入主回复）
 ---   on_spinner: fun(frame_text: string)?,   -- spinner 帧文字（可选）
 ---   on_completed: fun(full_text: string),   -- 请求成功完成，附带完整回复文本
 ---   on_error: fun(err_msg: string),          -- 请求失败（含取消）
@@ -34,6 +35,7 @@ function M.send(opts, callbacks)
   local sse_handle
   local spinner_timer
   local accumulated = {}
+  local reasoning_accumulated = {}
 
   local function finish()
     if done then
@@ -125,6 +127,16 @@ function M.send(opts, callbacks)
       table.insert(accumulated, text_chunk)
       if callbacks.on_delta then
         callbacks.on_delta(text_chunk)
+      end
+    end,
+    on_reasoning = function(text_chunk)
+      -- 累积 reasoning 但不混入主回复文本
+      if cancelled or done then
+        return
+      end
+      table.insert(reasoning_accumulated, text_chunk)
+      if callbacks.on_reasoning then
+        callbacks.on_reasoning(text_chunk)
       end
     end,
     on_completed = function()

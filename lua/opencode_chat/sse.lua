@@ -89,6 +89,7 @@ function M.subscribe(opts, callbacks)
   local uv = vim.uv or vim.loop
   local tcp = assert(uv.new_tcp(), "failed to create tcp socket")
   local buffer = ""
+  local part_types = {}  -- partID → type (e.g. "reasoning", "text"), populated via message.part.updated
   local cancelled = false
   local connected = false
   local backoff_seconds = 1
@@ -193,8 +194,30 @@ function M.subscribe(opts, callbacks)
       return
     end
 
+    -- Part 快照：记录 partID 的类型，用于后续 message.part.delta 过滤
+    if typ == "message.part.updated" then
+      local part = props.part or {}
+      local pid = part.id
+      if pid and part.type then
+        part_types[pid] = part.type
+      end
+      if callbacks.on_event then
+        vim.schedule(function() callbacks.on_event(typ, props) end)
+      end
+      return
+    end
+
     -- 增量文本：v1 compat message.part.delta
     if typ == "message.part.delta" then
+      -- 检查是否为 reasoning part：如果是，路由到 on_reasoning 而非显示
+      local ptype = props.partID and part_types[props.partID]
+      if ptype == "reasoning" then
+        local text = extract_delta_text(props)
+        if text ~= "" and callbacks.on_reasoning then
+          vim.schedule(function() callbacks.on_reasoning(text) end)
+        end
+        return
+      end
       local text = extract_delta_text(props)
       if text ~= "" then
         emit_delta(text)
