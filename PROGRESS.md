@@ -427,3 +427,9 @@
 - 预防：后续若要支持"展开思考"功能，在 `chat.lua` 中 `on_reasoning` 已有完整累积；UI 层只需接收 `on_reasoning` 回调即可。不要回退到无条件透传所有 delta 的行为。
 - commitID：bf0e6e0
 
+## 2026-10-21：V2 私有服务与多 Neovim 会话隔离
+
+- 问题：V1 路由、事件和无认证启动方式不适用于 V2；共享持久化历史还可能使不同 Neovim 误用同一个可写 session，单纯启动独立进程不足以隔离会话。
+- 方案：按 v2.1.1 私有启动协议使用 `serve --stdio --port 0`、随机密码和 stdin 租约，不改变共享服务禁用设置；显式传 location，每个 Neovim 创建新 session，外部历史先 fork。迁移 prompt/模型切换及 `{type,data}` SSE；取消等待 admission 后清理 inbox，再 interrupt，失败不伪装成功。
+- 预防：以目标版本源码和本机 OpenAPI 为准，不只替换 URL 前缀；严格 fixture 覆盖认证、分块 SSE、分页、重连不重发、取消竞争及 Quick 迟到回调；四个并发 Neovim 验证相同/不同 workspace 隔离，并用真实 `deepseek/deepseek-flash` 完成一次流式请求。
+- commitID：386c80c
