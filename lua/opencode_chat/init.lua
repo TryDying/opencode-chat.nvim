@@ -159,8 +159,7 @@ function M.ask(text)
       table.insert(accumulated, chunk)
       ui.update_last("Assistant", table.concat(accumulated, ""))
     end,
-    on_completed = function()
-      local full_text = table.concat(accumulated, "")
+    on_completed = function(full_text)
       request.busy = false
       request.cancelling = false
       ui.set_status("Idle")
@@ -177,7 +176,6 @@ function M.ask(text)
     on_cancelled = function()
       request.busy = false
       request.cancelling = false
-      server.state().session_id = nil
       ui.set_status("Cancelled")
       -- Replace "Thinking..." or "Cancelling..." with "Cancelled" once
       local msgs = ui.state().messages

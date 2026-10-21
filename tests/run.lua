@@ -287,13 +287,12 @@ opencode.clear_context()
 assert_eq(#ui.state().context, 0, "clear_context should remove all context items")
 vim.api.nvim_set_current_win(code_win)
 
-assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session", "session URL should target current API")
-assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/message", "message URL should target current API")
-assert_eq(client.prompt_async_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/prompt_async", "async prompt URL should target current API")
-assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc/abort", "abort URL should target session abort API")
-assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/session/abc", "rename URL should target session update API")
-assert_eq(client.delete_session_url("abc", { host = "127.0.0.1", port = 12345, directory = "/tmp/a b" }), "http://127.0.0.1:12345/session/abc?directory=%2Ftmp%2Fa%20b", "delete URL should include encoded directory query")
-assert_eq(client.current_project_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/project/current", "current project URL should target project/current API")
+assert_eq(client.session_url({ host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session", "session URL should target V2 API")
+assert_eq(client.message_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/message", "message URL should target V2 API")
+assert_eq(client.prompt_async_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/prompt", "prompt URL should target V2 API")
+assert_eq(client.abort_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc/interrupt?resume=false", "cancel URL should interrupt without resuming queue")
+assert_eq(client.rename_session_url("abc", { host = "127.0.0.1", port = 12345 }), "http://127.0.0.1:12345/api/session/abc", "rename URL should target V2 API")
+assert_eq(client.delete_session_url("abc", { host = "127.0.0.1", port = 12345, directory = "/tmp/a b" }), "http://127.0.0.1:12345/api/session/abc", "session ID is sufficient for V2 deletion")
 assert_eq(client.format_error({ status = 400, body = "bad request", stderr = "" }, "fallback"), "HTTP 400: bad request", "format_error should not let empty stderr hide HTTP body")
 
 opencode.append_file()
@@ -325,12 +324,14 @@ assert_true(wait_for(function()
   return opencode._request.busy == false and last and last.role == "Assistant" and last.text:match("fake reply") ~= nil
 end, 5000), "assistant reply should render from the message response")
 assert_true(wait_for(function()
-  return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id == "test-session-1"
+  return vim.fn.filereadable(prompt_file) == 1 and vim.fn.filereadable(session_file) == 1 and server.state().session_id ~= nil
 end, 5000), "submit should create session and send prompt to fake headless server")
 assert_true(type(server.state().job_pid) == "number" and server.state().job_pid > 0, "server state should record the OS process id")
 assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-events.jsonl") == 1, "message sending should open SSE event subscriptions")
 
 local session_payload = vim.json.decode(vim.fn.readfile(session_file)[1])
+local first_session = server.state().session_id
+assert_eq(session_payload.location.directory, tmp, "V2 session must explicitly specify workspace")
 assert_eq(session_payload.agent, "quick", "session create should include configured opencode agent")
 assert_eq(session_payload.model.providerID, "deepseek", "session create model should include providerID")
 assert_eq(session_payload.model.id, "deepseek-v4-flash", "session create model should include id")
@@ -338,11 +339,9 @@ assert_eq(session_payload.model.variant, "low", "session create model should inc
 
 local lines = vim.fn.readfile(prompt_file)
 local payload = vim.json.decode(lines[#lines])
-local sent_text = payload.parts[1].text
-assert_eq(payload.agent, "quick", "message payload should include configured opencode agent")
-assert_eq(payload.model.providerID, "deepseek", "message payload model should include providerID")
-assert_eq(payload.model.modelID, "deepseek-v4-flash", "message payload model should include modelID")
-assert_eq(payload.variant, "low", "message payload should include configured variant")
+local sent_text = payload.text
+assert_eq(payload.parts, nil, "V2 prompt must not contain V1 parts")
+assert_eq(payload.model, nil, "V2 model is configured on the session, not prompt")
 assert_true(sent_text:match("@src/example.lua") ~= nil, "prompt should include queued context label")
 assert_true(sent_text:match("function M.add") ~= nil, "prompt should include queued context code")
 assert_true(sent_text:match("这是啥") ~= nil, "prompt should include input text")
@@ -484,11 +483,11 @@ assert_true(wait_for(function()
   local messages = ui.state().messages
   return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Assistant" and messages[#messages].text:match("model switch") ~= nil
 end, 3000), "request after model switch should complete")
-lines = vim.fn.readfile(prompt_file)
+lines = vim.fn.readfile(tmp .. "/.opencode-chat-model.jsonl")
 payload = vim.json.decode(lines[#lines])
-assert_eq(payload.model.providerID, "deepseek", "switched payload model should include providerID")
-assert_eq(payload.model.modelID, "deepseek-v4-pro", "switched payload should use selected model")
-assert_eq(payload.variant, "max", "switched payload should use selected variant")
+assert_eq(payload.model.providerID, "deepseek", "model switch should include providerID")
+assert_eq(payload.model.id, "deepseek-v4-pro", "model switch should use selected model")
+assert_eq(payload.model.variant, "max", "model switch should use selected variant")
 
 opencode.ask("partial response")
 assert_true(wait_for(function()
@@ -525,7 +524,7 @@ assert_true(wait_for(function()
   return opencode._request.busy == false and messages[#messages] and messages[#messages].role == "Cancelled" and messages[#messages].text == "Cancelled by opencode."
 end, 2000), "cancel should abort backend and render cancellation")
 assert_true(vim.fn.filereadable(tmp .. "/.opencode-chat-abort.jsonl") == 1, "cancel should call opencode session abort endpoint")
-assert_eq(server.state().session_id, nil, "cancel should discard aborted session so the next request creates a fresh session")
+assert_eq(server.state().session_id, first_session, "V2 interruption should preserve the owned session")
 local cancelled_count = 0
 for _, message in ipairs(ui.state().messages) do
   if message.role == "Cancelled" then
@@ -550,8 +549,9 @@ assert_true(server.state().job_id == first_job, "UI toggle should not restart he
 
 opencode.new_session()
 assert_true(wait_for(function()
-  return server.state().session_id == "test-session-2"
+  return server.state().session_id and server.state().session_id ~= first_session
 end, 3000), "new_session should create another session")
+local second_session = server.state().session_id
 assert_eq(server.state().job_id, first_job, "new_session should not restart headless server")
 local session_lines = vim.fn.readfile(session_file)
 local newest_session_payload = vim.json.decode(session_lines[#session_lines])
@@ -559,7 +559,7 @@ assert_eq(newest_session_payload.model.id, "deepseek-v4-pro", "new_session shoul
 assert_eq(newest_session_payload.model.variant, "max", "new_session should use selected variant")
 opencode.rename_session("Renamed test session")
 assert_true(wait_for(function()
-  return vim.fn.filereadable(tmp .. "/.opencode-chat-rename.jsonl") == 1 and server.state().sessions["test-session-2"] and server.state().sessions["test-session-2"].title == "Renamed test session"
+  return vim.fn.filereadable(tmp .. "/.opencode-chat-rename.jsonl") == 1 and server.state().sessions[second_session] and server.state().sessions[second_session].title == "Renamed test session"
 end, 3000), "rename_session should update backend and local session cache")
 
 opencode.show_sessions()
@@ -567,7 +567,7 @@ assert_true(wait_for(function()
   return picker.state().buf and vim.api.nvim_buf_is_valid(picker.state().buf)
 end, 1000), "session picker should open")
 local session_picker_lines = table.concat(vim.api.nvim_buf_get_lines(picker.state().buf, 0, -1, false), "\n")
-assert_true(session_picker_lines:match("test%-session%-1") ~= nil, "session picker should include first session")
+assert_true(session_picker_lines:find(first_session, 1, true) ~= nil, "session picker should include first session")
 assert_true(session_picker_lines:match("Renamed test session") ~= nil, "session picker should include renamed latest session")
 assert_true(session_picker_lines:match("foreign%-session") == nil, "session picker should filter out sessions from other projects")
 assert_true(session_picker_lines:match("subagent%-session") == nil, "session picker should hide subagent sessions")
@@ -596,7 +596,7 @@ vim.api.nvim_set_current_win(picker.state().win)
 vim.api.nvim_win_set_cursor(picker.state().win, { assert(picker_line_matching("Renamed test session"), "renamed session line should exist"), 0 })
 picker.run_action("r")
 assert_true(wait_for(function()
-  return server.state().sessions["test-session-2"] and server.state().sessions["test-session-2"].title == "Picker renamed session"
+  return server.state().sessions[second_session] and server.state().sessions[second_session].title == "Picker renamed session"
 end, 3000), "session picker r action should rename selected session")
 
 assert_true(wait_for(function()
@@ -606,17 +606,17 @@ vim.api.nvim_set_current_win(picker.state().win)
 vim.api.nvim_win_set_cursor(picker.state().win, { assert(picker_line_matching("Picker renamed session"), "deletable session line should exist"), 0 })
 picker.run_action("d")
 assert_true(wait_for(function()
-  return vim.fn.filereadable(tmp .. "/.opencode-chat-delete.jsonl") == 1 and server.state().sessions["test-session-2"] == nil
+  return vim.fn.filereadable(tmp .. "/.opencode-chat-delete.jsonl") == 1 and server.state().sessions[second_session] == nil
 end, 3000), "session picker d action should delete selected session after confirmation")
 assert_true(wait_for(function()
   return picker.state().buf and vim.api.nvim_buf_is_valid(picker.state().buf) and picker_line_matching("Picker renamed session") == nil
 end, 1000), "session picker should refresh after delete")
 vim.ui.input = original_input
 picker.close()
-opencode.select_session("test-session-1")
+opencode.select_session(first_session)
 assert_true(wait_for(function()
   local messages = ui.state().messages
-  return server.state().session_id == "test-session-1" and messages[#messages] and messages[#messages].text:match("reasoning test") ~= nil
+  return server.state().session_id == first_session and messages[#messages] and messages[#messages].text:match("reasoning test") ~= nil
 end, 3000), "select_session should switch back and render history")
 
 local main_session_before_quick = server.state().session_id
@@ -640,11 +640,13 @@ assert_eq(server.state().session_id, main_session_before_quick, "quick ask shoul
 assert_eq(#ui.state().context, 1, "quick ask should not consume main chat context")
 lines = vim.fn.readfile(prompt_file)
 payload = vim.json.decode(lines[#lines])
-sent_text = payload.parts[1].text
+sent_text = payload.text
 assert_true(sent_text:match("quick branch") ~= nil, "quick prompt should include question")
 assert_true(sent_text:match("@src/example.lua") == nil, "quick prompt should not consume main queued context")
-assert_eq(payload.model.modelID, "deepseek-v4-pro", "quick message should reuse selected model")
-assert_eq(payload.variant, "max", "quick message should reuse selected variant")
+local quick_model_lines = vim.fn.readfile(tmp .. "/.opencode-chat-model.jsonl")
+local quick_model = vim.json.decode(quick_model_lines[#quick_model_lines]).model
+assert_eq(quick_model.id, "deepseek-v4-pro", "quick session should reuse selected model")
+assert_eq(quick_model.variant, "max", "quick session should reuse selected variant")
 local quick_session_id = quick.state().session.session_id
 local quick_session_count = #vim.fn.readfile(session_file)
 opencode.quick_append_file()
@@ -658,7 +660,7 @@ assert_eq(quick.state().session.session_id, quick_session_id, "quick ask should 
 assert_eq(#vim.fn.readfile(session_file), quick_session_count, "quick multi-turn should not create another session")
 lines = vim.fn.readfile(prompt_file)
 payload = vim.json.decode(lines[#lines])
-assert_true(payload.parts[1].text:match("@src/example.lua") ~= nil, "quick prompt should include quick-only context")
+assert_true(payload.text:match("@src/example.lua") ~= nil, "quick prompt should include quick-only context")
 local quick_panes = vim.deepcopy({
   message_win = quick_ui.state().message_win,
   input_win = quick_ui.state().input_win,
@@ -716,4 +718,5 @@ if final_job then
   assert_true(vim.fn.jobwait({ final_job }, 0)[1] ~= -1, "opencode.stop should wait for the fake server job to exit")
 end
 vim.fn.delete(tmp, "rf")
+dofile(cwd .. "/tests/v2.lua")
 print("opencode-chat.nvim tests passed")

@@ -11,6 +11,7 @@ local request = {
   closing = false,
   session = nil,
   handle = nil,
+  generation = 0,
 }
 
 local function notify_error(message)
@@ -77,9 +78,7 @@ local function cleanup_session(opts, cb)
   opts = opts or {}
   local session = request.session
   request.session = nil
-  if (opts.abort or request.busy) and request.handle and request.handle.cancel then
-    request.handle.cancel()
-  end
+  local handle = request.handle
   request.handle = nil
 
   local function after_abort()
@@ -88,8 +87,19 @@ local function cleanup_session(opts, cb)
     end)
   end
 
-  if opts.abort and session then
-    server.abort_ephemeral(session, function()
+  if opts.abort and handle then
+    handle.cancel(function(ok)
+      if not ok then
+        request.session = session
+        if cb then cb(false) end
+        return
+      end
+      vim.schedule(after_abort)
+    end)
+    return
+  elseif opts.abort and session then
+    server.abort_ephemeral(session, function(ok)
+      if not ok then request.session = session; if cb then cb(false) end; return end
       vim.schedule(after_abort)
     end)
     return
@@ -119,6 +129,10 @@ function M.submit()
 end
 
 function M.ask(text)
+  if request.closing then
+    notify_error("opencode quick session is still closing")
+    return
+  end
   if not text or text == "" then
     ui.show()
     return
@@ -129,27 +143,41 @@ function M.ask(text)
   end
 
   local prompt, project_root = build_prompt(text)
+  project_root = project_root or require("opencode_chat.root").find()
+  if request.session and request.session.root ~= project_root then
+    local previous = request.session
+    request.session = nil
+    delete_session(previous)
+  end
+  request.generation = request.generation + 1
+  local generation = request.generation
   request.busy = true
   request.cancelling = false
   ui.add_message("User", prompt)
   ui.add_message("Assistant", "Thinking...")
 
   local function do_send()
+    local accumulated = {}
     request.handle = server.send_ephemeral(request.session, prompt, {
       on_spinner = function(frame)
+        if generation ~= request.generation then return end
         ui.set_status("Thinking " .. frame)
       end,
       on_delta = function(chunk)
-        ui.update_last("Assistant", chunk)
+        if generation ~= request.generation then return end
+        table.insert(accumulated, chunk)
+        ui.update_last("Assistant", table.concat(accumulated, ""))
       end,
       on_completed = function(full_text)
+        if generation ~= request.generation then return end
         request.busy = false
         request.cancelling = false
         ui.set_status("Idle")
-        ui.replace_last_if("Assistant", "Thinking...", "Assistant", full_text ~= "" and full_text or "(empty response)")
+        ui.update_last("Assistant", full_text ~= "" and full_text or "(empty response)")
         request.handle = nil
       end,
       on_error = function(err)
+        if generation ~= request.generation then return end
         request.busy = false
         request.cancelling = false
         ui.set_status("Error")
@@ -157,6 +185,7 @@ function M.ask(text)
         request.handle = nil
       end,
       on_cancelled = function()
+        if generation ~= request.generation then return end
         request.busy = false
         request.cancelling = false
         ui.set_status("Cancelled")
@@ -178,7 +207,10 @@ function M.ask(text)
 
   server.create_ephemeral_session(project_root, function(ok, session, err)
     vim.schedule(function()
-      if request.closing then return end
+      if generation ~= request.generation or request.closing or not request.busy then
+        if ok then delete_session(session) end
+        return
+      end
       if not ok then
         request.busy = false
         ui.set_status("Error")
@@ -203,18 +235,19 @@ function M.cancel()
   request.cancelling = true
   ui.mark_cancelling()
   ui.set_status("Cancelling")
-  cleanup_session({ abort = true }, function()
+  cleanup_session({ abort = true }, function(ok)
     vim.schedule(function()
       request.busy = false
       request.cancelling = false
-      ui.set_status("Cancelled")
-      ui.replace_last_if("System", "Cancelling...", "Cancelled", "Quick ask cancelled and session deleted.")
+      ui.set_status(ok and "Cancelled" or "Error")
+      ui.replace_last_if("System", "Cancelling...", ok and "Cancelled" or "Error", ok and "Quick ask cancelled and session deleted." or "Quick ask cancellation/cleanup failed.")
     end)
   end)
 end
 
 function M.close()
   if request.closing then return end
+  request.generation = request.generation + 1
   request.closing = true
   local was_busy = request.busy
   request.busy = false

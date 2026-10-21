@@ -41,15 +41,15 @@ These routing rules are mandatory for this repository.
 ## Architecture highlights
 
 - Use a right-side Neovim split panel for the main Chat UI; `nui.nvim` may be used for picker/menu UI, but do not add `vim-floaterm` support.
-- MVP integration is `opencode serve --port <port> --hostname <host>`, `POST /session` (create), `POST /session/:sessionID/prompt_async` (send), `GET /event` (SSE streaming), `POST /session/:sessionID/abort` (cancel).
-- Communication: `chat.lua` orchestrates per-request lifecycle (SSE subscribe → on_connected → prompt_async → stream → complete). `server.lua` manages server job and session lifecycle. `client.lua` wraps HTTP calls.
-- All legacy API paths (`/api/session`, `/api/session/:id/prompt`, `/v1/sessions/:id/abort`) are removed. Only current OpenCode v1.18.15 API is supported.
-- Session listing uses `GET /session?scope=project&path=...`. `/project/:projectID/session` does not exist in the current API.
-- SSE completion: `session.status {type:"idle"}` primary, `session.idle` fallback. `session.next.step.ended` is passed through as a normal event.
-- `agent`, `model`, and `variant` must be included in current `/session/:sessionID/message` payloads; session creation uses model `{ providerID, id, variant }`, while messages use `{ providerID, modelID }` plus top-level `agent`/`variant`.
-- Cancellation must call `POST /session/:sessionID/abort`; do not represent local curl/loop termination as backend cancellation.
+- Support OpenCode V2 only, validated against v2.1.1. Start private `opencode serve --stdio --hostname <host> --port 0` per Neovim; never enable/register the managed service.
+- Parse the JSON ready URL from stdout; keep stdin open as the ownership lease. Supply a secure random `OPENCODE_PASSWORD`; use Basic auth as `opencode`, via curl stdin config (not argv/logs/files).
+- `chat.lua` coordinates configure → SSE server.connected → POST `/api/session/:id/prompt` → execution events/history. Acceptance is not completion; reconnect never resubmits.
+- V2 SSE uses `{ type, data }`, `session.text.*`, `session.reasoning.*`, and `session.execution.*`. curl decodes HTTP/chunking; comment heartbeats refresh liveness. Do not mix V1 `properties` or `message.part.*` into the fixture.
+- Create sessions with explicit `location.directory` and model `{ providerID, id, variant }`; switch existing sessions via `/model` and `/agent`. Prompt payload is `{ text }`. Omit agent by default to honor backend configuration.
+- Cancel admitted input via DELETE `/api/session/:id/inbox/:inboxID`, then POST `/api/session/:id/interrupt?resume=false`. Wait for in-flight admission; failures must not report cancellation success. V2 interruption preserves the session.
+- Each Neovim owns fresh sessions even in the same workspace. Fork external history before making it writable; resume owned sessions in-process. Private services still share persistent storage.
 - Repeated UI toggles in one Neovim process must not restart the headless opencode server/session.
-- Session lists must be scoped to the current project/workspace: prefer `/project/:projectID/session`; if falling back to global `/session`, filter by `projectID` or normalized `directory`.
+- List sessions via GET `/api/session?directory=...`, paginate, and filter by normalized `location.directory`; never fall back to an unfiltered global list.
 - Hiding the Chat UI must close any open picker/menu, and focusing the message pane must not enter insert mode.
 - If all remaining windows in the current tab are opencode-chat panes, automatically close that tab when other tabs exist; in the last tab, close Chat panes and allow Neovim to quit rather than restoring a code buffer or leaving an empty buffer.
 - The main Chat UI should keep status bar outside the scrollable message buffer; status should reflect Idle/Thinking/Error request states. Do not add toolbar/mouse button rows to the main panel by default.
@@ -69,8 +69,8 @@ These routing rules are mandatory for this repository.
 - `lua/opencode_chat/root.lua`: project root detection from root markers.
 - `lua/opencode_chat/server.lua`: headless opencode server job and session lifecycle.
 - `lua/opencode_chat/client.lua`: HTTP wrapper for session creation and prompt submission.
-- `lua/opencode_chat/sse.lua`: TCP SSE client with event routing.
-- `lua/opencode_chat/chat.lua`: per-request lifecycle coordination (SSE → prompt_async → stream).
+- `lua/opencode_chat/sse.lua`: curl-backed SSE transport and event routing.
+- `lua/opencode_chat/chat.lua`: per-request lifecycle coordination (configure → SSE → prompt → execution/history).
 - `lua/opencode_chat/ui.lua`: native split message/input buffers, rendering, and queued context display.
 - `lua/opencode_chat/quick_ui.lua`: Quick Ask floating window UI with independent context.
 - `lua/opencode_chat/context.lua`: current-file and Visual-selection reference generation.

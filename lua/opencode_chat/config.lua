@@ -4,13 +4,13 @@ M.defaults = {
   command = "opencode",
   host = "127.0.0.1",
   port = nil,
-  agent = "quick",
-  model = "deepseek/deepseek-v4-flash",
+  -- nil delegates to OpenCode's configured default agent.
+  model = "deepseek/deepseek-flash",
   providers = {
     deepseek = {
       variants = { "low", "medium", "high", "max" },
       models = {
-        { id = "deepseek-v4-flash", default_variant = "low" },
+        { id = "deepseek-flash", default_variant = "low" },
         { id = "deepseek-v4-pro", default_variant = "high" },
       },
     },

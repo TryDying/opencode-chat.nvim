@@ -1,6 +1,6 @@
 # opencode-chat.nvim
 
-轻量 Neovim 插件：用 Neovim 右侧 Chat panel 集成 `opencode serve` 的本地 HTTP API，创建 session、发送 prompt、管理上下文和历史会话，并让 opencode agent 执行文件修改。
+轻量 Neovim 插件：用右侧 Chat panel 集成 OpenCode V2 HTTP/SSE，管理上下文与历史会话，并让后端 agent 执行文件修改。当前验证版本为 v2.1.1，不再兼容 V1。
 
 ## 功能
 
@@ -8,7 +8,7 @@
 - `:OpencodeAsk [prompt]` 发送问题；不带参数时打开输入区。
 - Chat 输入区按 `<C-s>` 提交。
 - Chat UI 中 `<Tab>` 在消息区和输入区之间切换。
-- Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 通过 `POST /session/:id/abort` 取消当前请求。
+- Chat UI 中 `<C-c>` 或 `:OpencodeCancel` 清理已接收输入并调用 V2 interrupt，取消后保留会话。
 - Chat UI 底部固定 status bar，显示 Idle/Thinking/Error 等状态和当前 model/variant。
 - Chat UI 是 tab mirror：只要 Chat 当前可见，新建/切入 tab 会自动显示同一份 Chat；所有 tab 共享 messages、input 草稿、context、session 和状态。
 - Chat UI 的 message/input/status 三个窗口作为一组关闭；对其中任意一个执行 `:q` 会同步关闭另外两个窗口。
@@ -25,20 +25,20 @@
 
 ## 依赖
 
-- 必需：Neovim、`curl`、可用的 `opencode` CLI。
+- 必需：Neovim 0.10+、`curl`、OpenCode V2 CLI；当前使用 Linux `/dev/urandom` 生成私有服务密码。
 - 推荐：`nui.nvim`。插件会优先用 `nui.menu` 渲染 session/model/variant 选择器；缺失时会退回内置浮窗选择器，便于测试和最小环境运行。
 
 ## 配置示例
 
 ```lua
 require("opencode_chat").setup({
-  agent = "build",
-  model = "deepseek/deepseek-v4-flash",
+  -- agent 可省略，使用 OpenCode 已配置的默认 agent。
+  model = "deepseek/deepseek-flash",
   providers = {
     deepseek = {
       variants = { "low", "medium", "high", "max" },
       models = {
-        { id = "deepseek-v4-flash", default_variant = "low" },
+        { id = "deepseek-flash", default_variant = "low" },
         { id = "deepseek-v4-pro", default_variant = "high" },
       },
     },
@@ -70,9 +70,11 @@ require("opencode_chat").setup({
 })
 ```
 
-`model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；每个 provider 定义自己的 `variants`，每个 model 定义 `default_variant`。Lua 标识符不能包含 `-`，因此 `opencode-go` 这类 provider 可以写成 `["opencode-go"] = { ... }`，也可以写成 `{ id = "opencode-go", variants = ..., models = ... }` 的 array-style provider 条目。创建 session 时使用 `{ providerID, id, variant }`，发送 message 时使用 `{ providerID, modelID }` 并附带 `agent` / `variant`。
+`model` 使用 `provider/model` 格式，必须存在于 `providers` 白名单中；provider 定义 `variants`，model 定义 `default_variant`。含 `-` 的 provider 可用 bracket key 或 array-style 条目。创建/切换 session 模型使用 `{ providerID, id, variant }`，prompt 发送 `{ text }`。
 
-插件不订阅 `/event/subscribe` SSE 事件流；发送 message 后优先使用 HTTP 响应中的 assistant 内容，必要时再轮询 message history，避免流式事件竞态。
+插件订阅 V2 `/api/event` SSE，执行完成后用历史校正正文；断线重连不会重复提交 prompt。权限/form 回答 UI 尚未实现，等待交互时会提示，可用 `<C-c>` 取消。
+
+每个 Neovim 使用自己的 `serve --stdio` 私有服务和新 session，支持保持 `opencode service set disabled true`。不同 workspace，甚至相同 workspace 的多个 Neovim，也不会自动共享可写会话。外部历史继续对话前会先 fork；退出一个 Neovim 不影响其它实例。多进程请保留默认动态端口，不配置相同固定 `port`。
 
 插件默认不绑定全局快捷键；如需快捷键，请在 `keymaps` 中显式配置：
 
@@ -89,7 +91,7 @@ require("opencode_chat").setup({
 本仓库内置自闭环测试，使用 headless Neovim 运行：
 
 ```sh
-nvim --headless -l tests/run.lua
+VIM_PROFILE=basic nvim --headless -l tests/run.lua
 ```
 
 `./scripts/dev-sandbox` 是交互式开发沙盒，默认使用真实 `opencode` 后端；如需 fake backend 快速验证，可运行 `./scripts/dev-sandbox-fake`。
